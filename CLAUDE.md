@@ -5,7 +5,14 @@ The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDIT
 Final deliverable: `FY25_Set3_results.xlsx` (audited run), log `set3_run_final.log`,
 pre-fix baseline at `set3_run_pass1.log` / `FY25_Set3_results_pass1.xlsx`.
 
-Coverage: **983/1100 fields (89.4%)**. 56 files complete (11/11), 44 partial, **0 zero**.
+Coverage: **1033/1100 fields (93.9%)** after the partial-file triage wave (3-agent
+diagnosis of the 15 worst partials → 9 generic fixes: title anchors, fiduciary/proprietary
+title-zone scoping, structural TOC detection, sentence-length GF-name rejection >35 chars,
+dash+number join fix, category None→0.0 removed, 'net other financing' OFS variant).
+Two silent-wrong values corrected in shipped output (Salt Lake nonspendable, Miami-Dade
+category zeros). Edge-gap clustering was tried and REVERTED (fabricated values in 3 files —
+Mesa still needs a narrow fix). LESSON: geometry changes need the full-batch identity
+audit; the 13-file gate alone twice waved through fabrication bugs. **0 zero files.**
 PER-PAGE OCR FALLBACKS 2026-07-07 (commit c8ca62f): San Antonio BS 0→8 fields (cross-
 verified: OCR BS total FB = native RevEx ending FB exactly), Allegheny +2 (RevEx totals),
 Massachusetts +2 (bonus rescue). Adoption requires strictly-more-fields AND rev/exp
@@ -56,8 +63,9 @@ script + README) at `Backups/2026-07-07_audited/`. Script copy sha256-verified.
   OFS overwrite guard.
 
 ## Remaining backlog (post-deliverable, in rough priority order)
-1. Re-triage the partial files below 10/11 (NY State rotated text; Nebraska 3/11,
-   Allegheny FB section resisted OCR too, Miami-Dade/Honolulu 5/11 are the big ones).
-2. Atlanta OFS (10/11) and Arkansas expenditures-derivation confirmation against a
-   published Arkansas summary (value is exact-identity-derived, flagged in notes).
+1. Data-driven band derivation (cluster numeric-token right edges instead of header
+   midpoints) — the umbrella fix for Salt Lake totals (+5pt band swallows wide neighbor
+   values), Mesa (split 'General|Fund' header), and Honolulu (dot-leader interleave
+   defeated the tol=2 retry). All three diagnosed in the 2026-07-07 triage transcripts.
+2. Allegheny FB section (glued tokens resisted OCR), Atlanta OFS, Bexar residual (9/11).
 3. Incremental CSV checkpointing during batches; per-statement unit multipliers.
