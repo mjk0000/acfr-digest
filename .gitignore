@@ -1,0 +1,8 @@
+# Source PDF corpora — 1.5GB, not versioned (re-downloadable public documents)
+FY25_City_ACFRs/
+FY25_City_ACFRs_Set2/
+FY25_City_ACFRs_Set3/
+*.pdf
+
+# macOS
+.DS_Store

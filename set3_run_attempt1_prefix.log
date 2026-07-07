@@ -1,0 +1,74 @@
+16:13:36 [INFO] Processing 100 PDF(s)
+16:13:36 [INFO] Output: FY25_Set3_results.xlsx
+16:13:36 [INFO] 
+============================================================
+16:13:36 [INFO] Processing: AK_State_Alaska_FY2506_ACFR.pdf
+16:13:36 [INFO] ============================================================
+16:13:37 [INFO] Total pages: 354
+16:13:41 [INFO] Entity: NOT FOUND, FY End: June 30, 2025
+16:16:05 [INFO] Balance Sheet page: 50
+16:16:06 [INFO] RevEx page: 52
+16:16:06 [INFO] Reporting units detected: Thousands
+16:16:06 [INFO] General Fund column identified: 'general fund' (x_center=319.5, x_range=[239.5, 354.4])
+16:16:06 [INFO] BS: total_assets = 7,625,363.00
+16:16:06 [INFO] BS: total_liabilities = 1,194,402.00
+16:16:06 [INFO] BS: nonspendable = 105,160.00
+16:16:06 [INFO] BS: restricted = 114,548.00
+16:16:06 [INFO] BS: committed = 2,696,246.00
+16:16:06 [INFO] BS: assigned = 2,317.00
+16:16:06 [INFO] BS: unassigned = 2,565,203.00
+16:16:06 [INFO] BS: total_fund_balances = 5,483,474.00
+16:16:06 [INFO] General Fund column identified: 'general fund' (x_center=288.0, x_range=[208.0, 327.4])
+16:16:06 [INFO] RevEx: total_revenues = 8,378,945.00
+16:16:06 [INFO] RevEx: total_expenditures = 12,373,317.00
+16:16:06 [INFO] RevEx: total_ofs = 3,686,578.00
+16:16:06 [INFO] 
+============================================================
+16:16:06 [INFO] Processing: AL_County_Jefferson_County_FY2509_ACFR.pdf
+16:16:06 [INFO] ============================================================
+16:16:07 [INFO] Total pages: 199
+16:16:26 [INFO] Entity: Jefferson County, FY End: September 30, 2025
+16:17:30 [INFO] Balance Sheet page: 42
+16:17:30 [INFO] RevEx page: 44
+16:17:30 [INFO] No unit notation detected — defaulting to Full Dollars
+16:17:30 [INFO] General Fund column identified: 'general' (x_center=241.7, x_range=[161.7, 269.0])
+16:17:30 [INFO] BS: total_assets = 553,286,693.00
+16:17:30 [WARNING] BS: total_liabilities = NOT FOUND
+16:17:30 [INFO] BS: nonspendable = 29,224,410.00
+16:17:30 [INFO] BS: restricted = 17,611,203.00
+16:17:30 [INFO] BS: committed = 10,653,917.00
+16:17:30 [INFO] BS: assigned = 115,327,051.00
+16:17:30 [INFO] BS: unassigned = 251,610,081.00
+16:17:30 [INFO] BS: total_fund_balances = 424,426,662.00
+16:17:30 [INFO] General Fund column identified: 'general' (x_center=234.7, x_range=[154.7, 262.7])
+16:17:30 [INFO] RevEx: total_revenues = 243,590,425.00
+16:17:30 [INFO] RevEx: total_expenditures = 287,752,849.00
+16:17:30 [INFO] RevEx: total_ofs = 72,428,896.00
+16:17:30 [INFO] 
+============================================================
+16:17:30 [INFO] Processing: AL_State_Alabama_FY2509_ACFR.pdf
+16:17:30 [INFO] ============================================================
+16:17:35 [INFO] Total pages: 368
+16:17:40 [INFO] Entity: NOT FOUND, FY End: September 30, 2025
+16:19:25 [INFO] Balance Sheet page: 39
+16:19:25 [INFO] RevEx page: 43
+16:19:25 [INFO] Reporting units detected: Thousands
+16:19:25 [INFO] General Fund column identified: 'general fund' (x_center=345.8, x_range=[265.8, 377.6])
+16:19:25 [INFO] BS: total_assets = 2,579,150.00
+16:19:25 [INFO] BS: total_liabilities = 106,415.00
+16:19:25 [INFO] BS: nonspendable = 12,792.00
+16:19:25 [INFO] BS: restricted = 0.00
+16:19:25 [WARNING] BS: committed = NOT FOUND
+16:19:25 [INFO] BS: assigned = 16,287.00
+16:19:25 [INFO] BS: unassigned = 2,247,841.00
+16:19:25 [INFO] BS: total_fund_balances = 2,276,920.00
+16:19:25 [INFO] General Fund column identified: 'general fund' (x_center=345.8, x_range=[265.8, 377.6])
+16:19:25 [INFO] RevEx: total_revenues = 3,399,417.00
+16:19:25 [INFO] RevEx: total_expenditures = 2,597,406.00
+16:19:25 [INFO] RevEx: total_ofs = -568,922.00
+16:19:25 [INFO] 
+============================================================
+16:19:25 [INFO] Processing: AR_State_Arkansas_FY2506_ACFR.pdf
+16:19:25 [INFO] ============================================================
+16:19:26 [INFO] Total pages: 243
+16:21:29 [INFO] Entity: NOT FOUND, FY End: NOT FOUND
