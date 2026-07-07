@@ -619,9 +619,12 @@ def extract_value_in_column(row_words: List[Dict], col_left: float, col_right: f
     Handles split numbers (e.g., Rockville "3 38,871" → 338,871),
     em-dash / hyphen zeros, and dot-leader fill characters (Baltimore "......" before values).
     """
-    # +5pt right tolerance catches values printed just outside the column boundary
-    # (e.g. SF where the GF column midpoint is 0.9pt inside the actual value position).
-    tokens = [w for w in row_words if col_left <= word_x_center(w) <= col_right + 5]
+    # Right tolerance catches values printed just outside the column boundary
+    # (SF: 0.9pt outside). OCR pages get a wider band (+12) for tesseract box
+    # jitter — but ONLY OCR pages: a global +12 regressed six native-text files
+    # with tight column spacing (Salt Lake sign flip, Louisville identity break).
+    _RTOL = 12 if (row_words and row_words[0].get('ocr')) else 5
+    tokens = [w for w in row_words if col_left <= word_x_center(w) <= col_right + _RTOL]
     if not tokens:
         return None
 
@@ -646,7 +649,7 @@ def extract_value_in_column(row_words: List[Dict], col_left: float, col_right: f
     rightmost = max(numeric, key=lambda w: w['x0'])
     if rightmost['text'].rstrip('_')[-1:].isdigit():
         continuation = [w for w in row_words
-                        if col_right + 5 < word_x_center(w) < col_right + 20
+                        if col_right + _RTOL < word_x_center(w) < col_right + _RTOL + 15
                         and w['text'].lstrip('_').startswith(',')]
         if continuation:
             cont_tok = min(continuation, key=word_x_center)
@@ -1001,6 +1004,7 @@ def extract_revex_figures(
     # For OFS: track the last "total" row in the OFS section as fallback
     last_total_in_ofs = None
     fallback_captured = set()    # keys captured via blank-label fallback (overwritable)
+    excess_val = None            # pure rev-minus-exp excess (expenditure derivation)
 
     for page_idx in range(start_page_idx, min(start_page_idx + 3, len(pdf.pages))):
         if stop_hit:
@@ -1085,6 +1089,14 @@ def extract_revex_figures(
             # --- Excess/Deficiency line (marks start of OFS section below it) ---
             if EXCESS_PATTERN.search(lbl) and 'total' not in lbl:
                 past_excess_line = True
+                # Record the pure revenues-vs-expenditures excess value: when the
+                # expenditures total itself is unreadable (OCR dropping an
+                # underlined number), expenditures = revenues - excess exactly.
+                # Only the pure form qualifies — labels mentioning financing/
+                # other sources fold OFS into the figure and break the identity.
+                if (val is not None and excess_val is None
+                        and 'financing' not in lbl and 'other' not in lbl):
+                    excess_val = val
 
             # --- OFS section header detection ---
             # Allow OFS section to open if either: (a) we saw an excess/deficiency label,
@@ -1140,6 +1152,16 @@ def extract_revex_figures(
     if results['total_ofs'] is NOT_FOUND and last_total_in_ofs is not None:
         results['total_ofs'] = last_total_in_ofs
         notes.append("OFS total found via positional fallback (label non-standard)")
+
+    # Exact-identity rescue: expenditures = revenues - excess. Only when the
+    # expenditures total itself was unreadable and a PURE excess line was
+    # captured (see excess_val guard above).
+    if (results['total_expenditures'] is NOT_FOUND
+            and results['total_revenues'] is not NOT_FOUND
+            and excess_val is not None):
+        results['total_expenditures'] = results['total_revenues'] - excess_val
+        notes.append("Total expenditures derived from excess line "
+                     "(revenues - excess) — value row unreadable")
 
     return results
 
@@ -1308,27 +1330,111 @@ def is_scanned_pdf(pdf_path: Path) -> bool:
         return False
 
 
-def ocr_page(pdf_path: Path, page_num: int) -> str:
-    """Rasterize a page at 300 DPI and run pytesseract OCR."""
+_PT_PER_PX = 72.0 / 300.0  # rasterization at 300 DPI → PDF points
+
+
+def ocr_available() -> bool:
+    """True when the full OCR toolchain (pdftoppm + tesseract + pytesseract) is present."""
+    import shutil
+    if not (shutil.which('pdftoppm') and shutil.which('tesseract')):
+        return False
     try:
+        import pytesseract  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+class OCRPage:
+    """
+    pdfplumber-compatible page adapter backed by tesseract OCR (Layer 3).
+    extract_words() returns the same word dicts (text/x0/x1/top/bottom, in PDF
+    points) that the rest of the pipeline consumes, so column detection and
+    band extraction run unchanged on scanned/mojibake PDFs.
+
+    extract_text() OCRs only the TOP STRIP of the page (statement titles live
+    there) — cheap enough to page-scan a whole document. extract_words()
+    triggers a full-page OCR, which is only paid on the few statement pages.
+    """
+    STRIP_PX = 1200  # top ~35% of a 300-DPI letter page
+
+    def __init__(self, pdf_path: Path, page_num: int):
+        self._path = pdf_path
+        self._num = page_num          # 1-based for pdftoppm
+        self._full_words = None
+        self._strip_text = None
+        self.width = 612.0
+        self.height = 792.0
+
+    def _rasterize_and_read(self, full: bool):
         import pytesseract
         from PIL import Image
         import tempfile, os
+        cmd = ['pdftoppm', '-r', '300', '-f', str(self._num), '-l', str(self._num),
+               '-gray', '-png']
+        if not full:
+            cmd += ['-y', '0', '-H', str(self.STRIP_PX)]
+        with tempfile.TemporaryDirectory() as td:
+            prefix = os.path.join(td, 'p')
+            try:
+                subprocess.run(cmd + [str(self._path), prefix],
+                               capture_output=True, timeout=180, check=True)
+            except Exception:
+                return []
+            imgs = sorted(Path(td).glob('*.png'))
+            if not imgs:
+                return []
+            img = Image.open(imgs[0])
+            if full:
+                self.width = img.width * _PT_PER_PX
+                self.height = img.height * _PT_PER_PX
+            try:
+                data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+            except Exception:
+                return []
+        words = []
+        for i, txt in enumerate(data['text']):
+            txt = (txt or '').strip()
+            try:
+                conf = float(data['conf'][i])
+            except (TypeError, ValueError):
+                conf = -1.0
+            if not txt or conf < 30:
+                continue
+            x0 = data['left'][i] * _PT_PER_PX
+            top = data['top'][i] * _PT_PER_PX
+            words.append({'text': txt,
+                          'x0': x0, 'x1': x0 + data['width'][i] * _PT_PER_PX,
+                          'top': top, 'bottom': top + data['height'][i] * _PT_PER_PX,
+                          'ocr': True})  # marks OCR provenance (wider band tolerance)
+        words.sort(key=lambda w: (round(w['top']), w['x0']))
+        return words
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            prefix = os.path.join(tmpdir, 'page')
-            subprocess.run(
-                ['pdftoppm', '-r', '300', '-f', str(page_num), '-l', str(page_num),
-                 '-png', str(pdf_path), prefix],
-                capture_output=True, timeout=60, check=True
-            )
-            images = sorted(Path(tmpdir).glob('*.png'))
-            if not images:
-                return ""
-            img = Image.open(images[0])
-            return pytesseract.image_to_string(img)
-    except Exception as e:
-        return ""
+    @staticmethod
+    def _words_to_text(words) -> str:
+        lines = {}
+        for w in words:
+            lines.setdefault(round(w['top'] / 8) * 8, []).append(w)
+        return '\n'.join(' '.join(x['text'] for x in sorted(row, key=lambda t: t['x0']))
+                         for _, row in sorted(lines.items()))
+
+    def extract_words(self, **kwargs):
+        if self._full_words is None:
+            self._full_words = self._rasterize_and_read(full=True)
+        return self._full_words
+
+    def extract_text(self, **kwargs):
+        if self._full_words is not None:
+            return self._words_to_text(self._full_words)
+        if self._strip_text is None:
+            self._strip_text = self._words_to_text(self._rasterize_and_read(full=False))
+        return self._strip_text
+
+
+class OCRPdf:
+    """pdf-like object exposing .pages of OCRPage — drop-in for pdfplumber's PDF."""
+    def __init__(self, pdf_path: Path, total_pages: int):
+        self.pages = [OCRPage(pdf_path, i + 1) for i in range(total_pages)]
 
 
 # ---------------------------------------------------------------------------
@@ -1474,14 +1580,22 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
             total_pages = len(pdf.pages)
             logger.info(f"Total pages: {total_pages}")
 
-            # --- Mojibake fast-bail: broken font encodings make every page
-            # extract as garbage; a full scan is pointless and can cost 30+ min.
+            # --- Mojibake handling: broken font encodings make every page
+            # extract as garbage. If the OCR toolchain is present, swap in the
+            # OCRPdf adapter and run the SAME pipeline against tesseract word
+            # boxes; otherwise bail fast with an honest note.
             if not text_layer_usable(pdf):
-                notes.append("Text layer unusable (broken font encoding) — "
-                             "needs OCR; skipped full scan")
-                logger.error(f"{pdf_path.name}: text layer unusable (mojibake) — skipping")
-                result['Extraction Notes'] = ' | '.join(notes)
-                return result
+                if ocr_available():
+                    notes.append("Text layer unusable — figures extracted via OCR; "
+                                 "verify manually")
+                    logger.warning(f"{pdf_path.name}: text layer unusable — OCR mode")
+                    pdf = OCRPdf(pdf_path, total_pages)
+                else:
+                    notes.append("Text layer unusable (broken font encoding) — "
+                                 "needs OCR; skipped full scan")
+                    logger.error(f"{pdf_path.name}: text layer unusable (mojibake) — skipping")
+                    result['Extraction Notes'] = ' | '.join(notes)
+                    return result
 
             # --- Extract entity info ---
             entity_name, fy_end = extract_entity_info(pdf)
