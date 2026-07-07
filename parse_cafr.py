@@ -121,7 +121,7 @@ OFS_SECTION_PATTERN = re.compile(r'\bother\s+financing\s+(sources?|uses?)\b|\btr
 # wrapped labels whose tail falls into the value band (Delaware: 'Total Other Sources
 # (Uses) of / Financial Resources' — label zone sees only 'total other sources').
 # Safe because the pattern is only consulted inside an open OFS section.
-OFS_TOTAL_PATTERN = re.compile(r'\btotal\b.*\bfinancing\b|\btotal\b.*\bother\b.*\bfinancing\b|\btotal\b.*\bsources?\b.*\buses?\b|\btotal\b.*\bother\b.*\bsources?\b')
+OFS_TOTAL_PATTERN = re.compile(r'\btotal\b.*\bfinancing\b|\btotal\b.*\bother\b.*\bfinancing\b|\btotal\b.*\bsources?\b.*\buses?\b|\btotal\b.*\bother\b.*\bsources?\b|\bnet\b.*\bother\b.*\bfinancing\b')  # 'Net other financing sources (uses)' — NY State
 
 END_FB_PATTERN = re.compile(r'\bend\s+of\s+year\b|\bending\s+fund\b|\bend\s+of\s+period\b')
 
@@ -259,24 +259,30 @@ def is_balance_sheet_page(title_area: str, relaxed: bool = False) -> bool:
     on a first pass it matches MD&A condensed tables that appear before the
     real statement (Idaho, Seattle) and steals the page slot.
     """
-    has_bs = 'balance sheet' in title_area
+    # Title ANCHOR: the phrase must sit in the title zone (first 300 chars),
+    # not merely anywhere in 900 chars — MD&A/narrative prose mentioning "the
+    # governmental funds balance sheet" mid-sentence stole the page slot for
+    # NY State and Nebraska. Compact form tolerates tight-kerning (Allegheny).
+    _zone = title_area[:300]
+    has_bs = 'balance sheet' in _zone or 'balancesheet' in _zone.replace(' ', '')
     has_gf = ('governmental fund' in title_area or 'governmental balance' in title_area
+              or 'governmentalfund' in title_area.replace(' ', '')
               or (relaxed and 'general fund' in title_area))
     # Most bad words checked against full title_area (900 chars).
     bad = any(x in title_area for x in [
-        'combining', 'proprietary', 'fiduciary',
+        'combining',
         'table of contents', 'reconciliation',
         'net position',  # government-wide statement
     ])
     # MD&A narrative pages — prefix match tolerates in-document typos
     # (Orange County prints "Management's Disccusion and Analysis").
     bad = bad or bool(re.search(r"management'?s?\s+disc", title_area))
-    # 'budget' scoped to the title zone only (first 250 chars): states commonly have
-    # a "Budget Stabilization Fund" COLUMN HEADER on the real statement page, which
-    # lands within 900 chars and must not disqualify the page.
-    # 'notes to' guards against note-disclosure pages matching the relaxed
-    # 'general fund' signature above.
-    bad = bad or any(x in title_area[:250] for x in ('budget', 'notes to'))
+    # Title-zone-scoped exclusions (first 250 chars): these words appear as
+    # LINE ITEMS in real statements' data zones ("Budget Stabilization Fund"
+    # column, "due from fiduciary funds" — Miami-Dade) and must not disqualify
+    # the page; genuinely excluded pages carry them in the title.
+    bad = bad or any(x in title_area[:250] for x in
+                     ('budget', 'notes to', 'proprietary', 'fiduciary'))
     # 'component unit' checked only in the first 250 chars (statement title zone).
     # Philadelphia's BS has "due from component units" as a line-item label in the
     # data section (chars ~300-900); that must NOT exclude the page.
@@ -295,14 +301,22 @@ def is_revex_page(title_area: str, relaxed: bool = False) -> bool:
     Statement (target). Excludes budget comparisons, combining schedules, etc.
     relaxed: see is_balance_sheet_page — second-pass fallback only.
     """
+    # Title ANCHOR (see is_balance_sheet_page): the statement phrase must sit
+    # in the title zone. Kills TOC/MD&A/narrative pages whose scattered
+    # keywords matched (Ohio p6, Bexar p6, Palm Beach, Multnomah, Baltimore's
+    # 'Comparative Schedule of revenues...').
+    _zone = title_area[:300]
+    has_anchor = (bool(re.search(r'statements?\s+of\s+revenues', _zone))
+                  or 'statementofrevenues' in _zone.replace(' ', ''))
     has_rev = 'revenue' in title_area
     has_exp = 'expenditure' in title_area
     has_changes = 'changes in fund' in title_area
     has_gf = ('governmental fund' in title_area
+              or 'governmentalfund' in title_area.replace(' ', '')
               or (relaxed and 'general fund' in title_area))
     bad = any(x in title_area for x in [
         'combining', 'reconciliation',
-        'proprietary', 'fiduciary', 'last ten', 'ten fiscal year',
+        'last ten', 'ten fiscal year',
         'table of contents',
         'expenses',  # proprietary funds use "expenses" not "expenditures"
         # 'comparative' removed — budget comparison schedules already caught by 'budget';
@@ -310,9 +324,12 @@ def is_revex_page(title_area: str, relaxed: bool = False) -> bool:
     ])
     # MD&A — typo-tolerant prefix (see is_balance_sheet_page).
     bad = bad or bool(re.search(r"management'?s?\s+disc", title_area))
-    # 'budget'/'notes to' scoped to title zone — see is_balance_sheet_page.
-    bad = bad or any(x in title_area[:250] for x in ('budget', 'notes to'))
-    return has_rev and has_exp and has_changes and has_gf and not bad
+    # Title-zone-scoped exclusions — see is_balance_sheet_page ('fiduciary' as
+    # a line item, e.g. Colorado's 'individual and fiduciary income' tax row,
+    # was rejecting the TRUE statement page).
+    bad = bad or any(x in title_area[:250] for x in
+                     ('budget', 'notes to', 'proprietary', 'fiduciary'))
+    return has_anchor and has_rev and has_exp and has_changes and has_gf and not bad
 
 
 def text_layer_usable(pdf) -> bool:
@@ -351,8 +368,18 @@ def find_statement_pages(pdf) -> Tuple[Optional[int], Optional[int]]:
     revex_idx = None
     titles = {}  # cache: page idx -> title_area (for the relaxed second pass)
 
+    # TOC pages: >=3 lines ending in dot leaders + a small page number.
+    # (Bexar's TOC-continuation defeats the 'table of contents' exclusion
+    # because _get_title_area's header stripper deletes the phrase itself.)
+    # Line-anchored so Honolulu-style dot-leader VALUES (ending in large
+    # comma numbers) don't false-positive.
+    _TOC_LINE = re.compile(r'\.{6,}\s*\d{1,3}\s*$', re.MULTILINE)
+
     for i, page in enumerate(pdf.pages):
         raw = page.extract_text() or ""
+        if len(_TOC_LINE.findall(raw[:2500])) >= 3:
+            titles[i] = ''  # structural TOC — never a statement page
+            continue
         title_area = _get_title_area(raw)
         titles[i] = title_area
 
@@ -397,7 +424,14 @@ def get_page_words(page) -> List[Dict]:
     if words:
         long_runs = sum(1 for w in words
                         if len(w['text']) > 22 and any(c.isalpha() for c in w['text']))
-        if long_runs >= max(3, len(words) // 10):
+        # Dot-leader interleave (Honolulu): leader dots at ~2.5pt pitch merge
+        # with digits into tokens like 'TotalRevenues....2..,.0..8..8'. At
+        # x_tolerance=2 the dots separate out (pure-'.' tokens are filtered by
+        # the numeric join) and the digits reassemble correctly.
+        dotted_runs = sum(1 for w in words
+                          if w['text'].count('.') >= 4
+                          and any(c.isdigit() for c in w['text']))
+        if long_runs >= max(3, len(words) // 10) or dotted_runs >= 3:
             tighter = page.extract_words(x_tolerance=2, y_tolerance=3, keep_blank_chars=False)
             if len(tighter) > len(words) * 1.5:
                 return tighter
@@ -481,7 +515,12 @@ def cluster_header_columns(header_words: List[Dict], x_gap: float = 30.0,
     # Sort by x-center
     cand.sort(key=word_x_center)
 
-    # Gap-based clustering
+    # Gap-based clustering on center distance. (An edge-distance variant was
+    # tried 2026-07-07 to fix Mesa's split 'General|Fund' header — it fixed
+    # Mesa but corrupted six other files: wider bands admitted PARTIAL
+    # neighbor-value fragments that bypass the two-complete-numbers guard,
+    # fabricating digit-concatenated values in Dallas/Kansas/Vermont. Reverted;
+    # Mesa needs a narrower mechanism.)
     clusters: List[List[Dict]] = []
     current: List[Dict] = [cand[0]]
     for w in cand[1:]:
@@ -536,6 +575,16 @@ def identify_general_fund_col(columns: List[Dict]) -> Optional[Dict]:
     for col in columns:
         name = col['name']
         compact = name.replace(' ', '')  # removes spaces for character-split detection
+
+        # Sentence-length names are page-title text that leaked into header
+        # clustering (KY/NH/FL: no y-gap between title and headers) — such a
+        # cluster's band spans multiple funds. Reject it so the fallback chain
+        # (backward split scan / tight clustering) finds the real header row.
+        # Threshold 35 matches the long-standing leftmost-cross-check signal;
+        # NH's leaked cluster is exactly 40 chars, so >40 missed it. Real GF
+        # headers max out around 32 ('general fund of the commonwealth').
+        if len(name) > 35:
+            continue
 
         # Must contain "general" in the spaced OR the compact form
         if 'general' not in name and 'general' not in compact:
@@ -664,6 +713,17 @@ def extract_value_in_column(row_words: List[Dict], col_left: float, col_right: f
         if any(_REAL_NUM.match(t['text'].replace('_', '')) for t in numeric):
             numeric = [t for t in numeric if not re.match(r'^\d{1,2}\)$', t['text'])]
 
+    # A LONE DASH followed by a complete number is the GF's zero next to a
+    # neighbor column's value caught by band tolerance (Salt Lake: '—' +
+    # '18,635,719' joined to -18,635,719, a fabricated negative). The dash IS
+    # the value.
+    if len(numeric) > 1:
+        _REAL_NUM2 = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
+        first_txt = numeric[0]['text'].replace('_', '').strip()
+        if (first_txt in ('-', '–', '—', '--')
+                and any(_REAL_NUM2.match(t['text'].replace('_', '')) for t in numeric[1:])):
+            return 0.0
+
     # Sanity guard: two independently complete comma-formatted numbers in one band
     # means the band spans two real columns (merged headers on dense multi-fund
     # statements). Joining them fabricates an absurd value — refuse and return
@@ -755,8 +815,11 @@ def extract_bs_figures(
         if current_fb_cat and current_fb_cat in fb_cat_found:
             if results[current_fb_cat] is NOT_FOUND and fb_has_items:
                 results[current_fb_cat] = fb_accumulator
-            elif results[current_fb_cat] is NOT_FOUND:
-                results[current_fb_cat] = 0.0
+            # NOTE: header-found-but-no-value stays NOT_FOUND. The old
+            # None→0.0 default converted extraction FAILURES into confident
+            # zeros (Miami-Dade: nonspendable/restricted/committed reported
+            # 0.00, truth 29,366/114,955/124,286). A genuine zero prints as a
+            # dash, which extracts as 0.0 through the normal path.
         current_fb_cat = None
         fb_accumulator = 0.0
         fb_has_items = False
