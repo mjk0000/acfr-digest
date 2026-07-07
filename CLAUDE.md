@@ -5,8 +5,15 @@ The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDIT
 Final deliverable: `FY25_Set3_results.xlsx` (audited run), log `set3_run_final.log`,
 pre-fix baseline at `set3_run_pass1.log` / `FY25_Set3_results_pass1.xlsx`.
 
-Coverage: **958/1100 fields (87.1%)**. 55 files complete (11/11), 43 partial, 2 zero
-(Arkansas/Atlanta mojibake fast-bail — the only remaining zero bucket; both need OCR).
+Coverage: **979/1100 fields (89.0%)**. 56 files complete (11/11), 44 partial, **0 zero**.
+OCR LAYER WIRED 2026-07-07: mojibake PDFs (Arkansas 0→11/11, Atlanta 0→10/11) now
+extract via a pdfplumber-compatible tesseract adapter (OCRPage/OCRPdf) — strip-OCR for
+page identification, full-page OCR on statement pages only; words carry an 'ocr' marker
+that widens the value-band tolerance to +12 (native text stays +5 — a global +12
+regressed six dense files, caught by the identity audit, reverted). Expenditures can be
+derived exactly from a pure excess line when OCR drops an underlined total (noted).
+Requires: tesseract (brew, 5.5.2), pdftoppm, pytesseract; degrades to honest fast-bail
+notes when absent.
 Orange County RESOLVED 2026-07-07 (0/11 → 10/11): MD&A typo trap ("Disccusion"),
 two-page-spread layout (title on right page, GF column on left), underscore-interleaved
 unit text — all three fixed generically (commit b89e715).
@@ -44,8 +51,10 @@ script + README) at `Backups/2026-07-07_audited/`. Script copy sha256-verified.
   OFS overwrite guard.
 
 ## Remaining backlog (post-deliverable, in rough priority order)
-1. OCR wiring for the hostile bucket: Arkansas, Atlanta (mojibake), San Antonio BS +
-   Allegheny remainder (broken cmaps / glued tokens — need char-level work).
-2. Re-triage the 27 partial files below 10/11 (NY State rotated text — BS page now
-   found but 0 fields extract; Nebraska 3/11, Miami-Dade/Honolulu 5/11 are the big ones).
-3. Incremental CSV checkpointing during batches; per-statement unit multipliers.
+1. San Antonio BS + Allegheny remainder: broken cmaps / glued tokens — candidates for
+   targeted per-page OCR fallback (reuse OCRPage on pages where the GF column can't be
+   identified from native text) or char-level re-tokenization.
+2. Re-triage the partial files below 10/11 (NY State rotated text — BS page found but
+   0 fields extract; Nebraska 3/11, Miami-Dade/Honolulu 5/11 are the big ones).
+3. Atlanta OFS (10/11 — only missing field on the OCR path).
+4. Incremental CSV checkpointing during batches; per-statement unit multipliers.
