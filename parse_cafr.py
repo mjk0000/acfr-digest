@@ -223,7 +223,9 @@ def detect_unit(page_text: str, prev_page_text: str = "") -> str:
     Scan page text (and optionally preceding page) for unit disclosure.
     Returns 'Thousands', 'Millions', or 'Full Dollars'.
     """
-    combined = normalize((prev_page_text or "") + " " + page_text)
+    # Underscores stripped: decorative rule lines can interleave with the unit
+    # text ('_in_ _T_h_o_u_s_a_n_d_s_' — Orange County).
+    combined = normalize((prev_page_text or "") + " " + page_text).replace('_', '')
     # Compact form catches tight-kerning PDFs whose header renders '(InThousands)'
     # as one word (Broward) — the spaced patterns can't match those.
     compact = combined.replace(' ', '')
@@ -263,10 +265,12 @@ def is_balance_sheet_page(title_area: str, relaxed: bool = False) -> bool:
     # Most bad words checked against full title_area (900 chars).
     bad = any(x in title_area for x in [
         'combining', 'proprietary', 'fiduciary',
-        "management's discussion",  # MD&A narrative pages
         'table of contents', 'reconciliation',
         'net position',  # government-wide statement
     ])
+    # MD&A narrative pages — prefix match tolerates in-document typos
+    # (Orange County prints "Management's Disccusion and Analysis").
+    bad = bad or bool(re.search(r"management'?s?\s+disc", title_area))
     # 'budget' scoped to the title zone only (first 250 chars): states commonly have
     # a "Budget Stabilization Fund" COLUMN HEADER on the real statement page, which
     # lands within 900 chars and must not disqualify the page.
@@ -299,11 +303,13 @@ def is_revex_page(title_area: str, relaxed: bool = False) -> bool:
     bad = any(x in title_area for x in [
         'combining', 'reconciliation',
         'proprietary', 'fiduciary', 'last ten', 'ten fiscal year',
-        'table of contents', "management's discussion",
+        'table of contents',
         'expenses',  # proprietary funds use "expenses" not "expenditures"
         # 'comparative' removed — budget comparison schedules already caught by 'budget';
         # removing avoids false negatives on pages titled "...with comparative totals for YYYY"
     ])
+    # MD&A — typo-tolerant prefix (see is_balance_sheet_page).
+    bad = bad or bool(re.search(r"management'?s?\s+disc", title_area))
     # 'budget'/'notes to' scoped to title zone — see is_balance_sheet_page.
     bad = bad or any(x in title_area[:250] for x in ('budget', 'notes to'))
     return has_rev and has_exp and has_changes and has_gf and not bad
@@ -1545,6 +1551,20 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
                 bs_page = pdf.pages[bs_page_idx]
                 gf_col = get_column_structure(bs_page, logger)
 
+                # Two-page-spread rescue (Orange County): the statement TITLE is
+                # printed on the RIGHT page of a facing-page spread while the
+                # General Fund column sits on the LEFT page (which has no title
+                # of its own). If the title page has no GF column, try the page
+                # before it.
+                if gf_col is None and bs_page_idx > 0:
+                    prev_gf = get_column_structure(pdf.pages[bs_page_idx - 1], logger)
+                    if prev_gf is not None:
+                        bs_page_idx -= 1
+                        gf_col = prev_gf
+                        notes.append(f"BS: spread layout — General Fund column on "
+                                     f"facing page {bs_page_idx + 1}")
+                        logger.info(f"BS spread layout: using facing page {bs_page_idx + 1}")
+
                 if gf_col is None:
                     notes.append(f"BS p{bs_page_idx + 1}: General Fund column not identified")
                     logger.warning(f"BS: Could not identify General Fund column")
@@ -1578,6 +1598,16 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
                 # The RevEx statement shares the same multi-column structure as the BS.
                 # Re-detect column structure on this page.
                 gf_col_revex = get_column_structure(revex_page, logger)
+
+                # Two-page-spread rescue — see Balance Sheet block above.
+                if gf_col_revex is None and revex_page_idx > 0:
+                    prev_gf = get_column_structure(pdf.pages[revex_page_idx - 1], logger)
+                    if prev_gf is not None:
+                        revex_page_idx -= 1
+                        gf_col_revex = prev_gf
+                        notes.append(f"RevEx: spread layout — General Fund column on "
+                                     f"facing page {revex_page_idx + 1}")
+                        logger.info(f"RevEx spread layout: using facing page {revex_page_idx + 1}")
 
                 if gf_col_revex is None:
                     notes.append(f"RevEx p{revex_page_idx + 1}: General Fund column not identified")
