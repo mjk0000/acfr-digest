@@ -1618,9 +1618,19 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
             # unreadable (e.g. San Antonio's BS title font has a broken cmap).
             # GASB layout places BS a few pages before RevEx; scan the
             # neighborhood for the nearest page with a General Fund column.
+            # Candidate probe: native column detection first; if the page's
+            # headers are ALSO unreadable natively (San Antonio's broken cmap),
+            # probe the same page via OCR before moving on.
+            def _probe_page(cand_idx):
+                _plog = logging.getLogger('probe')
+                hit = get_column_structure(pdf.pages[cand_idx], _plog)
+                if hit is None and ocr_available() and not isinstance(pdf, OCRPdf):
+                    hit = get_column_structure(OCRPage(pdf_path, cand_idx + 1), _plog)
+                return hit
+
             if bs_page_idx is None and revex_page_idx is not None:
                 for cand in range(revex_page_idx - 1, max(-1, revex_page_idx - 5), -1):
-                    if get_column_structure(pdf.pages[cand], logging.getLogger('probe')):
+                    if _probe_page(cand):
                         bs_page_idx = cand
                         notes.append(f"BS page {cand + 1} inferred by position "
                                      f"(title unreadable) — verify manually")
@@ -1628,7 +1638,7 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
                         break
             elif revex_page_idx is None and bs_page_idx is not None:
                 for cand in range(bs_page_idx + 1, min(len(pdf.pages), bs_page_idx + 5)):
-                    if get_column_structure(pdf.pages[cand], logging.getLogger('probe')):
+                    if _probe_page(cand):
                         revex_page_idx = cand
                         notes.append(f"RevEx page {cand + 1} inferred by position "
                                      f"(title unreadable) — verify manually")
@@ -1679,11 +1689,41 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
                                      f"facing page {bs_page_idx + 1}")
                         logger.info(f"BS spread layout: using facing page {bs_page_idx + 1}")
 
+                # Per-page OCR fallback A: native text exists but THIS page's
+                # column headers are unreadable (San Antonio: broken cmap turns
+                # 'General Fund' into mojibake). Probe the page via OCR; if a GF
+                # column appears, extract through OCR pages for this statement.
+                bs_source = pdf
+                if (gf_col is None and ocr_available()
+                        and not isinstance(pdf, OCRPdf)):
+                    ocr_gf = get_column_structure(OCRPage(pdf_path, bs_page_idx + 1), logger)
+                    if ocr_gf is not None:
+                        gf_col = ocr_gf
+                        bs_source = OCRPdf(pdf_path, total_pages)
+                        notes.append(f"BS p{bs_page_idx + 1}: column headers unreadable "
+                                     f"natively — extracted via OCR; verify manually")
+                        logger.info(f"BS p{bs_page_idx + 1}: per-page OCR fallback engaged")
+
                 if gf_col is None:
                     notes.append(f"BS p{bs_page_idx + 1}: General Fund column not identified")
                     logger.warning(f"BS: Could not identify General Fund column")
                 else:
-                    bs_figures = extract_bs_figures(pdf, bs_page_idx, gf_col, notes, logger)
+                    bs_figures = extract_bs_figures(bs_source, bs_page_idx, gf_col, notes, logger)
+                    # Per-page OCR fallback B: column found but the value zone is
+                    # unreadable (Allegheny: values glued to labels in single
+                    # tokens). Retry via OCR; adopt only a strictly better result.
+                    _found = sum(1 for v in bs_figures.values() if v is not NOT_FOUND)
+                    if (_found <= 2 and ocr_available()
+                            and not isinstance(bs_source, OCRPdf)):
+                        _opdf = OCRPdf(pdf_path, total_pages)
+                        _ogf = get_column_structure(_opdf.pages[bs_page_idx], logger)
+                        if _ogf is not None:
+                            _ofig = extract_bs_figures(_opdf, bs_page_idx, _ogf, notes, logger)
+                            if sum(1 for v in _ofig.values() if v is not NOT_FOUND) > _found:
+                                bs_figures = _ofig
+                                notes.append("BS re-extracted via OCR (native value "
+                                             "zone unreadable) — verify manually")
+                                logger.info("BS: OCR re-extraction adopted")
                     result['Total Assets'] = bs_figures['total_assets']
                     result['Total Liabilities'] = bs_figures['total_liabilities']
                     result['FB - Nonspendable'] = bs_figures['nonspendable']
@@ -1723,13 +1763,37 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
                                      f"facing page {revex_page_idx + 1}")
                         logger.info(f"RevEx spread layout: using facing page {revex_page_idx + 1}")
 
+                # Per-page OCR fallbacks — see Balance Sheet block above.
+                revex_source = pdf
+                if (gf_col_revex is None and ocr_available()
+                        and not isinstance(pdf, OCRPdf)):
+                    ocr_gf = get_column_structure(OCRPage(pdf_path, revex_page_idx + 1), logger)
+                    if ocr_gf is not None:
+                        gf_col_revex = ocr_gf
+                        revex_source = OCRPdf(pdf_path, total_pages)
+                        notes.append(f"RevEx p{revex_page_idx + 1}: column headers unreadable "
+                                     f"natively — extracted via OCR; verify manually")
+                        logger.info(f"RevEx p{revex_page_idx + 1}: per-page OCR fallback engaged")
+
                 if gf_col_revex is None:
                     notes.append(f"RevEx p{revex_page_idx + 1}: General Fund column not identified")
                     logger.warning("RevEx: Could not identify General Fund column")
                 else:
                     revex_figures = extract_revex_figures(
-                        pdf, revex_page_idx, gf_col_revex, notes, logger
+                        revex_source, revex_page_idx, gf_col_revex, notes, logger
                     )
+                    _found = sum(1 for v in revex_figures.values() if v is not NOT_FOUND)
+                    if (_found <= 1 and ocr_available()
+                            and not isinstance(revex_source, OCRPdf)):
+                        _opdf = OCRPdf(pdf_path, total_pages)
+                        _ogf = get_column_structure(_opdf.pages[revex_page_idx], logger)
+                        if _ogf is not None:
+                            _ofig = extract_revex_figures(_opdf, revex_page_idx, _ogf, notes, logger)
+                            if sum(1 for v in _ofig.values() if v is not NOT_FOUND) > _found:
+                                revex_figures = _ofig
+                                notes.append("RevEx re-extracted via OCR (native value "
+                                             "zone unreadable) — verify manually")
+                                logger.info("RevEx: OCR re-extraction adopted")
                     result['Total Revenues'] = revex_figures['total_revenues']
                     result['Total Expenditures'] = revex_figures['total_expenditures']
                     result['Total OFS (Uses)'] = revex_figures['total_ofs']
