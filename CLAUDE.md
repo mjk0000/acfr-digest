@@ -5,7 +5,12 @@ The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDIT
 Final deliverable: `FY25_Set3_results.xlsx` (audited run), log `set3_run_final.log`,
 pre-fix baseline at `set3_run_pass1.log` / `FY25_Set3_results_pass1.xlsx`.
 
-Coverage: **979/1100 fields (89.0%)**. 56 files complete (11/11), 44 partial, **0 zero**.
+Coverage: **983/1100 fields (89.4%)**. 56 files complete (11/11), 44 partial, **0 zero**.
+PER-PAGE OCR FALLBACKS 2026-07-07 (commit c8ca62f): San Antonio BS 0→8 fields (cross-
+verified: OCR BS total FB = native RevEx ending FB exactly), Allegheny +2 (RevEx totals),
+Massachusetts +2 (bonus rescue). Adoption requires strictly-more-fields AND rev/exp
+plausibility (0.25–4.0 ratio) — the ratio gate exists because Honolulu's OCR attempt
+adopted a wrong revenues grab (caught by identity audit, reverted).
 OCR LAYER WIRED 2026-07-07: mojibake PDFs (Arkansas 0→11/11, Atlanta 0→10/11) now
 extract via a pdfplumber-compatible tesseract adapter (OCRPage/OCRPdf) — strip-OCR for
 page identification, full-page OCR on statement pages only; words carry an 'ocr' marker
@@ -51,10 +56,8 @@ script + README) at `Backups/2026-07-07_audited/`. Script copy sha256-verified.
   OFS overwrite guard.
 
 ## Remaining backlog (post-deliverable, in rough priority order)
-1. San Antonio BS + Allegheny remainder: broken cmaps / glued tokens — candidates for
-   targeted per-page OCR fallback (reuse OCRPage on pages where the GF column can't be
-   identified from native text) or char-level re-tokenization.
-2. Re-triage the partial files below 10/11 (NY State rotated text — BS page found but
-   0 fields extract; Nebraska 3/11, Miami-Dade/Honolulu 5/11 are the big ones).
-3. Atlanta OFS (10/11 — only missing field on the OCR path).
-4. Incremental CSV checkpointing during batches; per-statement unit multipliers.
+1. Re-triage the partial files below 10/11 (NY State rotated text; Nebraska 3/11,
+   Allegheny FB section resisted OCR too, Miami-Dade/Honolulu 5/11 are the big ones).
+2. Atlanta OFS (10/11) and Arkansas expenditures-derivation confirmation against a
+   published Arkansas summary (value is exact-identity-derived, flagged in notes).
+3. Incremental CSV checkpointing during batches; per-statement unit multipliers.

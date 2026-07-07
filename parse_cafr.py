@@ -1789,7 +1789,16 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
                         _ogf = get_column_structure(_opdf.pages[revex_page_idx], logger)
                         if _ogf is not None:
                             _ofig = extract_revex_figures(_opdf, revex_page_idx, _ogf, notes, logger)
-                            if sum(1 for v in _ofig.values() if v is not NOT_FOUND) > _found:
+                            # Adoption needs MORE fields AND internal plausibility:
+                            # counting fields alone let Honolulu adopt a wrong
+                            # revenues grab (rev/exp ratio 0.01).
+                            _rev, _exp = _ofig['total_revenues'], _ofig['total_expenditures']
+                            _plausible = True
+                            if (_rev is not NOT_FOUND and _exp is not NOT_FOUND
+                                    and _rev > 0 and _exp > 0):
+                                _plausible = 0.25 <= (_rev / _exp) <= 4.0
+                            if (sum(1 for v in _ofig.values() if v is not NOT_FOUND) > _found
+                                    and _plausible):
                                 revex_figures = _ofig
                                 notes.append("RevEx re-extracted via OCR (native value "
                                              "zone unreadable) — verify manually")
