@@ -434,8 +434,79 @@ def get_page_words(page) -> List[Dict]:
         if long_runs >= max(3, len(words) // 10) or dotted_runs >= 3:
             tighter = page.extract_words(x_tolerance=2, y_tolerance=3, keep_blank_chars=False)
             if len(tighter) > len(words) * 1.5:
-                return tighter
-    return words
+                return _repair_words(tighter)
+    return _repair_words(words)
+
+
+_DOT_INTERLEAVE = re.compile(r'^(?P<head>[^.]*?)\.{3,}(?P<tail>.*\d.*)$')
+
+
+def _split_dot_leader_token(w: Dict) -> Optional[List[Dict]]:
+    """
+    Honolulu-class repair: leader dots at ~2.5pt pitch run through the value
+    zone and fuse label+dots+digits into one token
+    ('TotalRevenues....2..,.0..8..8..,.7..2.5'). No x_tolerance separates
+    sub-2pt gaps, so split at token level: label head keeps its left position;
+    the de-dotted tail ('2,088,725') becomes a compact token right-aligned at
+    the original x1 (where number glyphs truthfully end), keeping it inside
+    its own column band and clear of neighbors.
+    """
+    m = _DOT_INTERLEAVE.match(w['text'])
+    if not m:
+        return None
+    value_txt = m.group('tail').replace('.', '')
+    if (not any(c.isdigit() for c in value_txt)
+            or not re.fullmatch(r'\$?\(?[\d,]+\)?', value_txt)):
+        return None
+    n = len(w['text'])
+    cw = (w['x1'] - w['x0']) / n if n else 0
+    out = []
+    head_txt = m.group('head')
+    if head_txt.strip():
+        out.append({**w, 'text': head_txt, 'x1': w['x0'] + cw * len(head_txt)})
+    out.append({**w, 'text': value_txt, 'x0': w['x1'] - cw * len(value_txt)})
+    return out
+
+
+_FUSED_HINT = re.compile(r'\d,\d{4}')          # ',1277' — no valid number has this
+_VALID_NUM = re.compile(r'^\(?\$?\d{1,3}(?:,\d{3})+\)?$')
+
+
+def _split_fused_number(w: Dict) -> Optional[List[Dict]]:
+    """
+    Split two column values fused into one token by tight inter-column kerning
+    ('246,1277,607' = 246,127 | 7,607 — Honolulu). Only splits when EXACTLY one
+    decomposition into two valid comma-formatted numbers exists; ambiguous or
+    non-matching tokens are left alone (the two-number band guard then handles
+    them safely). Positions split proportionally by character count.
+    """
+    txt = w['text']
+    if not _FUSED_HINT.search(txt) or not re.fullmatch(r'\(?\$?[\d,()]+\)?', txt):
+        return None
+    splits = [(txt[:i], txt[i:]) for i in range(4, len(txt) - 3)
+              if _VALID_NUM.match(txt[:i]) and _VALID_NUM.match(txt[i:])]
+    if len(splits) != 1:
+        return None
+    left, right = splits[0]
+    cw = (w['x1'] - w['x0']) / len(txt)
+    mid = w['x0'] + cw * len(left)
+    return [{**w, 'text': left, 'x1': mid},
+            {**w, 'text': right, 'x0': mid}]
+
+
+def _repair_words(words: List[Dict]) -> List[Dict]:
+    """Token-level repairs for hostile typography (dot leaders, fused numbers)."""
+    if not any('...' in w['text'] or _FUSED_HINT.search(w['text']) for w in words):
+        return words
+    repaired = []
+    for w in words:
+        parts = None
+        if '...' in w['text']:
+            parts = _split_dot_leader_token(w)
+        if parts is None and _FUSED_HINT.search(w['text']):
+            parts = _split_fused_number(w)
+        repaired.extend(parts if parts else [w])
+    return repaired
 
 
 def cluster_into_rows(words: List[Dict], y_tolerance: float = 5.0) -> List[List[Dict]]:
@@ -853,6 +924,7 @@ def extract_bs_figures(
     fallback_captured = set()    # keys captured via blank-label fallback (overwritable)
     prev_lbl = ''                # previous row's label (wrapped-header detection)
     prev_val = None              # previous row's value (wrapped-header detection)
+    bs_total_pending = None      # two-row total: label row seen, value on next row
 
     def finalize_fb_cat():
         nonlocal fb_accumulator, fb_has_items, current_fb_cat
@@ -898,7 +970,10 @@ def extract_bs_figures(
                 # on the next page with the remaining rows.
                 notes.append(f"BS p{page_idx + 1}: continuation carries other "
                              f"funds — page skipped")
+                bs_total_pending = None
                 continue
+            # A pending two-row total must never satisfy across a page break.
+            bs_total_pending = None
 
         pages_checked += 1
         page = pdf.pages[page_idx]
@@ -962,11 +1037,23 @@ def extract_bs_figures(
                 if lbl not in ('', 'total') and not re.search(r'\btotal\b', lbl):
                     saw_asset_item = True
 
+            # Two-row total capture (Honolulu): a 'Total Liabilities' label row
+            # with no value, followed by a PURE value row (empty label). Only
+            # the empty-label form qualifies — anything looser recreates the
+            # cross-row phantom class the OFS pending mechanism suffered.
+            if bs_total_pending and results[bs_total_pending] is NOT_FOUND:
+                if lbl == '' and val is not None:
+                    results[bs_total_pending] = val
+                bs_total_pending = None
+
             if not in_fund_balance:
-                if ('total liabilities' in lbl or 'totalliabilities' in clbl) and val is not None:
-                    if results['total_liabilities'] is NOT_FOUND or 'total_liabilities' in fallback_captured:
-                        results['total_liabilities'] = val
-                        fallback_captured.discard('total_liabilities')
+                if ('total liabilities' in lbl or 'totalliabilities' in clbl):
+                    if val is not None:
+                        if results['total_liabilities'] is NOT_FOUND or 'total_liabilities' in fallback_captured:
+                            results['total_liabilities'] = val
+                            fallback_captured.discard('total_liabilities')
+                    elif results['total_liabilities'] is NOT_FOUND and 'deferred' not in lbl:
+                        bs_total_pending = 'total_liabilities'
                 # Fallback: blank-label row in liabilities section after items
                 elif (results['total_liabilities'] is NOT_FOUND and in_liabilities_section
                       and saw_liability_item and lbl in ('', 'total') and val is not None):
@@ -1150,6 +1237,9 @@ def extract_revex_figures(
                 continue
 
             lbl = row_label(row, col_left)
+            # Compact form for tight-kerning/fused labels ('TotalRevenues' —
+            # Honolulu, Allegheny); the BS extractor has had this all along.
+            clbl = lbl.replace(' ', '')
             val = extract_value_in_column(row, col_left, col_right)
 
             # --- Two-row OFS label: label on one row, value on the next ---
@@ -1171,7 +1261,8 @@ def extract_revex_figures(
             # --- Total Revenues ---
             # Labeled total may overwrite a fallback capture (blank-label group
             # subtotals, e.g. under 'Taxes:', can precede the real total — audit F2).
-            if re.search(r'\btotal\s+revenues?\b', lbl) and val is not None:
+            if ((re.search(r'\btotal\s+revenues?\b', lbl) or clbl.startswith('totalrevenue'))
+                    and val is not None):
                 if results['total_revenues'] is NOT_FOUND or 'total_revenues' in fallback_captured:
                     results['total_revenues'] = val
                     fallback_captured.discard('total_revenues')
@@ -1187,7 +1278,8 @@ def extract_revex_figures(
                 saw_revenue_item = True
 
             # --- Total Expenditures ---
-            if re.search(r'\btotal\s+expenditures?\b', lbl) and val is not None:
+            if ((re.search(r'\btotal\s+expenditures?\b', lbl) or clbl.startswith('totalexpenditure'))
+                    and val is not None):
                 if results['total_expenditures'] is NOT_FOUND or 'total_expenditures' in fallback_captured:
                     results['total_expenditures'] = val
                     fallback_captured.discard('total_expenditures')
@@ -1198,7 +1290,7 @@ def extract_revex_figures(
                 fallback_captured.add('total_expenditures')
 
             # --- Excess/Deficiency line (marks start of OFS section below it) ---
-            if EXCESS_PATTERN.search(lbl) and 'total' not in lbl:
+            if (EXCESS_PATTERN.search(lbl) or 'excess' in clbl) and 'total' not in clbl:
                 past_excess_line = True
                 # Record the pure revenues-vs-expenditures excess value: when the
                 # expenditures total itself is unreadable (OCR dropping an
@@ -1216,12 +1308,18 @@ def extract_revex_figures(
             # Never re-open once total_ofs is captured: a later page's transfers rows
             # (another fund at the same x-positions) must not overwrite it (Johnson County).
             _past_exp = results['total_expenditures'] is not NOT_FOUND
-            if ((past_excess_line or _past_exp) and OFS_SECTION_PATTERN.search(lbl)
+            _ofs_section_lbl = (OFS_SECTION_PATTERN.search(lbl)
+                                or 'otherfinancing' in clbl
+                                or 'transfersin' in clbl or 'transfersout' in clbl)
+            if ((past_excess_line or _past_exp) and _ofs_section_lbl
                     and not in_ofs_section and results['total_ofs'] is NOT_FOUND):
                 in_ofs_section = True
 
             # --- OFS total detection ---
-            if in_ofs_section and OFS_TOTAL_PATTERN.search(lbl):
+            _ofs_total_lbl = (OFS_TOTAL_PATTERN.search(lbl)
+                              or ('total' in clbl and 'financing' in clbl)
+                              or ('net' in clbl and 'otherfinancing' in clbl))
+            if in_ofs_section and _ofs_total_lbl:
                 if val is not None:
                     results['total_ofs'] = val
                     in_ofs_section = False
@@ -1243,7 +1341,7 @@ def extract_revex_figures(
                 last_total_in_ofs = val
 
             # --- Net change in fund balance (stop condition) ---
-            if NET_CHANGE_PATTERN.search(lbl):
+            if NET_CHANGE_PATTERN.search(lbl) or 'netchangeinfund' in clbl:
                 stop_hit = True
                 break
             # Wrapped variant: deeply indented 'Net change in fund balances' can lose
@@ -1255,7 +1353,8 @@ def extract_revex_figures(
                 break
 
             # --- End of year fund balance (also a stop condition) ---
-            if END_FB_PATTERN.search(lbl):
+            if (END_FB_PATTERN.search(lbl)
+                    or 'endofyear' in clbl or 'endingfund' in clbl):
                 stop_hit = True
                 break
 
