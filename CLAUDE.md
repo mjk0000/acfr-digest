@@ -5,7 +5,11 @@ The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDIT
 Final deliverable: `FY25_Set3_results.xlsx` (audited run), log `set3_run_final.log`,
 pre-fix baseline at `set3_run_pass1.log` / `FY25_Set3_results_pass1.xlsx`.
 
-Coverage: **1033/1100 fields (93.9%)** after the partial-file triage wave (3-agent
+Coverage: **1044/1100 fields (94.9%)** after the band-refinement wave (refine_gf_band:
+data-derived column bands from numeric right-edge clusters — third geometry attempt,
+landed with conservative guards; fixed Salt Lake/Mesa and CORRECTED three shipped values:
+Oakland fabricated digit, Massachusetts deferred-inflows line, Montgomery missed OFS).
+Previously 1033 after the partial-file triage wave (3-agent
 diagnosis of the 15 worst partials → 9 generic fixes: title anchors, fiduciary/proprietary
 title-zone scoping, structural TOC detection, sentence-length GF-name rejection >35 chars,
 dash+number join fix, category None→0.0 removed, 'net other financing' OFS variant).
@@ -63,9 +67,6 @@ script + README) at `Backups/2026-07-07_audited/`. Script copy sha256-verified.
   OFS overwrite guard.
 
 ## Remaining backlog (post-deliverable, in rough priority order)
-1. Data-driven band derivation (cluster numeric-token right edges instead of header
-   midpoints) — the umbrella fix for Salt Lake totals (+5pt band swallows wide neighbor
-   values), Mesa (split 'General|Fund' header), and Honolulu (dot-leader interleave
-   defeated the tol=2 retry). All three diagnosed in the 2026-07-07 triage transcripts.
-2. Allegheny FB section (glued tokens resisted OCR), Atlanta OFS, Bexar residual (9/11).
-3. Incremental CSV checkpointing during batches; per-statement unit multipliers.
+1. Honolulu dot-leader interleave (refine_gf_band can't help — tokens aren't parseable
+   numbers; needs char-level splitting), Allegheny FB section (glued tokens), Atlanta OFS.
+2. Incremental CSV checkpointing during batches; per-statement unit multipliers.
