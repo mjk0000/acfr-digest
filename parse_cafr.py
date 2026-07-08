@@ -633,6 +633,50 @@ def continuation_column_check(page, min_x: float = 180.0):
     return cols, identify_general_fund_col(cols)
 
 
+def refine_gf_band(rows: List[List[Dict]], data_start_idx: int, gf_col: Dict) -> bool:
+    """
+    Refine the GF column band from DATA geometry (numbers right-align, so
+    numeric tokens' right edges cluster tightly per column) instead of header
+    midpoints, which mis-place bands when headers split ('General|Fund' —
+    Mesa) or when a wide neighbor value strays into the +tolerance zone
+    (Salt Lake: fabricationable overlap).
+
+    Conservative by design: only applies when >=4 complete comma-formatted
+    numbers form a tight right-edge cluster within 45pt of the header center;
+    otherwise the header-derived band stands (returns False). Split-number
+    pages (SF) produce no complete numbers in-column and correctly fall back.
+    Mutates gf_col in place; returns True when refined.
+    """
+    _NUM = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
+    toks = []
+    for row in rows[data_start_idx:]:
+        for w in row:
+            if _NUM.match(w['text'].replace('_', '')):
+                toks.append(w)
+    if len(toks) < 4:
+        return False
+    # Cluster by right edge (x1), 6pt tolerance
+    toks.sort(key=lambda w: w['x1'])
+    clusters = []
+    for w in toks:
+        if clusters and w['x1'] - clusters[-1][-1]['x1'] <= 6.0:
+            clusters[-1].append(w)
+        else:
+            clusters.append([w])
+    clusters = [c for c in clusters if len(c) >= 4]
+    if not clusters:
+        return False
+    gf_center = gf_col['x_center']
+    def cluster_center(c):
+        return (min(w['x0'] for w in c) + max(w['x1'] for w in c)) / 2
+    best = min(clusters, key=lambda c: abs(cluster_center(c) - gf_center))
+    if abs(cluster_center(best) - gf_center) > 45.0:
+        return False
+    gf_col['x_left'] = min(w['x0'] for w in best) - 4.0
+    gf_col['x_right'] = max(w['x1'] for w in best) + 4.0
+    return True
+
+
 def derive_label_gutter(rows: List[List[Dict]], default: float = 180.0) -> float:
     """
     Estimate where the row-label zone ends and data columns begin (Fix B).
@@ -940,9 +984,13 @@ def extract_bs_figures(
             # Phoenix, NYC) and "RESOURCES AND FUND BALANCES" (Phoenix — split across
             # two rows so 'liabilit' doesn't appear on the second row).
             in_fb_lbl = re.search(r'\bfund\s+balance', lbl) or 'fundbalance' in clbl
+            # A label STARTING with 'and' is a wrapped-header continuation
+            # fragment ('...Deferred Inflows of Resources, / and Fund Balances'
+            # — Texas), never a real section start.
             if (in_fb_lbl and 'total' not in lbl and 'totalfund' not in clbl
                     and 'liabilit' not in lbl and 'liabilit' not in clbl
-                    and 'resources' not in lbl and not is_header_tail):
+                    and 'resources' not in lbl and not is_header_tail
+                    and not lbl.startswith('and ')):
                 in_fund_balance = True
 
             # --- Bare 'Total' closing an open category's sub-item list ---
@@ -1331,6 +1379,12 @@ def get_column_structure(page, logger: logging.Logger) -> Optional[Dict]:
         col_names = [c['name'] for c in columns]
         logger.warning(f"No General Fund column identified. Columns found: {col_names}")
         return None
+
+    # Refine the band from data geometry when a clean numeric cluster aligns
+    # with the header (see refine_gf_band) — header midpoints stand otherwise.
+    if refine_gf_band(all_rows, data_start_idx, gf_col):
+        logger.info(f"GF band refined from data geometry: "
+                    f"[{gf_col['x_left']:.1f}, {gf_col['x_right']:.1f}]")
 
     logger.info(f"General Fund column identified: '{gf_col['name']}' "
                 f"(x_center={gf_col['x_center']:.1f}, "
