@@ -68,7 +68,16 @@ script + README) at `Backups/2026-07-07_audited/`. Script copy sha256-verified.
   tolerance for tight-kerning PDFs, mojibake fast-bail, positional statement rescue,
   OFS overwrite guard.
 
+CODE AUDIT 2026-07-07 (post-campaign, commit 76a64d5): three-agent review closed 5
+fabrication paths (comma-grouping validation, continuation-incompleteness, guard ordering,
+OFS pending exclusions, bare-total discipline) and shipped batch survivability (per-file
+CSV checkpoint — verified live —, write_excel sanitize+fallback, tesseract timeout,
+toolchain version logging). Wave verified behavior-neutral: zero changed cells on the full
+corpus. Findings + deferred items: CODE_AUDIT_2026-07-07.md.
+
 ## Remaining backlog (post-deliverable, in rough priority order)
-1. Allegheny FB section (glued tokens), Atlanta OFS, Honolulu liabilities (prints
+1. Per-statement unit multipliers (unit disagreement resolves alphabetically; OCR-sourced
+   figures never re-detect units — USD columns only, raw figures unaffected).
+2. Allegheny FB section (glued tokens), Atlanta OFS, Honolulu liabilities (prints
    right-shifted out of column alignment — unreachable without unsafe band-widening).
-2. Incremental CSV checkpointing during batches; per-statement unit multipliers.
+3. process_pdf BS/RevEx consolidation, OCR result cache, named constants — see audit doc.
