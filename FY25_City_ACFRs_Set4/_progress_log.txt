@@ -1,0 +1,70 @@
+[2026-07-07] Batch: KS/KY/LA cities (11)
+KS Wichita         | SAVED   | FYE 12/31/2025 | KS/City/KS_City_Wichita_FY2512_ACFR.pdf | src: wichita.gov Archive ADID=15281
+KS Overland Park   | SKIPPED | not yet published (latest posted: FY2024 ACFR, released 6/23/2025; FY2025 not found)
+KS Kansas City KS  | SKIPPED | not yet published (Unified Gov WyCo/KCK Accounting page latest: 2022 ACFR)
+KS Olathe          | SKIPPED | not yet published (olatheks.gov Financial Reports latest: 2024 ACFR)
+KY Lexington       | SAVED   | FYE 6/30/2025  | KY/City/KY_City_Lexington_FY2506_ACFR.pdf | src: lexingtonky.gov Accounting (Google Drive)
+KY Bowling Green   | SAVED   | FYE 6/30/2025  | KY/City/KY_City_Bowling_Green_FY2506_ACFR.pdf | src: bgky.org/files/Imb9CdLe.pdf
+KY Owensboro       | SAVED   | FYE 6/30/2025  | KY/City/KY_City_Owensboro_FY2506_ACFR.pdf | src: owensboro.org (revize CMS)
+LA New Orleans     | SKIPPED | FY2025 ACFR submitted to LLA 6/30/2026 (per nola.gov 6/30/26 press release) but not yet publicly posted on nola.gov or LLA
+LA Baton Rouge     | SKIPPED | not yet published (brla.gov ACFR page latest: 2024)
+LA Shreveport      | SKIPPED | not yet published; no FY2025 (FYE 12/31/2025) report found on shreveportla.gov or LLA
+LA Lafayette       | SAVED   | FYE 10/31/2025 | LA/City/LA_City_Lafayette_FY2510_ACFR.pdf | src: lafayettela.gov/media/x3onbcun/annual-comprehensive-financial-report-2025.pdf
+[2026-07-07] IL/IN/IA batch (Aurora, Naperville, Joliet, Rockford, Fort Wayne, Evansville, South Bend, Carmel, Des Moines, Cedar Rapids, Davenport, Sioux City):
+  SAVED IA_City_Cedar_Rapids_FY2506_ACFR.pdf (174pp, FYE 6/30/2025) src: cedar-rapids.org "ACFR FY 2025.pdf"
+  SAVED IA_City_Davenport_FY2506_ACFR.pdf (168pp, FYE 6/30/2025) src: davenportiowa.com FY25 ACFR.pdf
+  SAVED IN_City_Fort_Wayne_FY2512_ACFR.pdf (254pp, FYE 12/31/2025) src: cityoffortwayne.in.gov Archive ADID=224
+  SKIP IL Aurora - FY2025 (12/31/2025) not yet published; latest 2024 on aurora.il.us
+  SKIP IL Naperville - FY2025 ACFR published (25-8100-final-audit---co-naperville.pdf) but naperville.il.us returns 403 to all non-browser clients (curl x3, host fetch x3); needs manual browser download
+  SKIP IL Joliet - FY2025 (12/31/2025) not yet published; latest 2024 on joliet.gov
+  SKIP IL Rockford - FY2025 (12/31/2025) not yet published; latest 2024 on rockfordil.gov
+  SKIP IN Evansville - no city-published ACFR located; only monthly flash reports/budget + SBOA filings; CY2025 not published
+  SKIP IN South Bend - FY2025 not yet published; ACFR folder (docs.southbendin.gov fol/6603) latest is 2024
+  SKIP IN Carmel - CY2025 ACFR not published; latest found 2023 via SBOA
+  SKIP IA Des Moines - FYE 6/30/2025 ACFR not yet posted; dsm.city Accounting doc center latest is 2024
+  SKIP IA Sioux City - FY2025 Annual Report exists (sioux-city.org showpublisheddocument/46693) but server 403-blocks curl and host fetch; needs manual browser download
+[2026-07-07] SET4 batch (ME/MD/MA/MI, 13 cities):
+SAVED (all verified: PDF, >40pp, ACFR title, FYE 6/30/2025):
+- MD_City_Rockville_FY2506_ACFR.pdf (108pp) rockvillemd.gov
+- MD_City_Frederick_FY2506_ACFR.pdf (160pp) cityoffrederickmd.gov
+- MD_City_Bowie_FY2506_ACFR.pdf (128pp) cityofbowie.org
+- MA_City_Worcester_FY2506_ACFR.pdf (211pp) worcesterma.gov
+- MA_City_Springfield_FY2506_ACFR.pdf (185pp) springfield-ma.gov
+- MA_City_Cambridge_FY2506_ACFR.pdf (143pp) cambridgema.gov (official posted FY25 ACFR; carries internal "DRAFT 1/30/2026" typesetter header on a few pages)
+- MI_City_Grand_Rapids_FY2506_ACFR.pdf (183pp) grandrapidsmi.gov
+- MI_City_Sterling_Heights_FY2506_ACFR.pdf (223pp) sterlingheights.gov
+- MI_City_Ann_Arbor_FY2506_ACFR.pdf (222pp) a2gov.org
+SKIPPED:
+- ME Portland: FY25 ACFR exists (Baker Tilly audit) but portlandmaine.gov ACFR page is JS-rendered (CivicPlus widget); no direct PDF URL extractable. Revisit with browser.
+- MD Gaithersburg: FY2025 audited report posted (showpublisheddocument/15693) but HTTP 403 bot-block on curl AND host-side fetch. Revisit with browser.
+- MA Lowell: Only "Audited Basic Financial Statements FY2025" published (no statistical section / not a full ACFR) -> per rule, skipped.
+- MI Warren: FY25 ACFR URL exists (cityofwarren.org .../2026/01/Fiscal-Year-Ended-June-30-2025.pdf) but WAF returns HTTP 415 to curl and host fetch. Revisit with browser.
+[2026-07-07] SET4 batch (DE/FL/GA/ID, 13 cities):
+SAVED (all verified: PDF, >40pp, ACFR title page, eligible FY end):
+- FL_City_Miami_FY2509_ACFR.pdf (246pp, 21.7MB) archive.miamigov.com FYE 9/30/2025
+- FL_City_Tampa_FY2509_ACFR.pdf (427pp, 4.9MB) tampa.gov FYE 9/30/2025
+- FL_City_Orlando_FY2509_ACFR.pdf (308pp, 158MB) orlando.gov FYE 9/30/2025
+- FL_City_StPetersburg_FY2509_ACFR.pdf (292pp, 4.2MB) flauditor.gov e-filed copy (full ACFR, not the Popular report) FYE 9/30/2025
+- GA_City_Columbus_FY2506_ACFR.pdf (297pp, 8.9MB) resources.columbusga.gov (Columbus Consolidated Gov) FYE 6/30/2025
+- GA_City_Athens_FY2506_ACFR.pdf (172pp, 4.7MB) ted.cviog.uga.edu official filing (Athens-Clarke Unified Gov) FYE 6/30/2025
+- ID_City_Nampa_FY2509_ACFR.pdf (160pp, 5.5MB) cityofnampa.us FYE 9/30/2025
+- ID_City_IdahoFalls_FY2509_ACFR.pdf (176pp, 7.1MB) idahofallsidaho.gov FYE 9/30/2025
+SKIPPED:
+- DE Wilmington: FY25 ACFR published (wilmingtonde.gov showpublisheddocument/14278) but Granicus/Akamai blocks curl AND host fetch (403/TLS reset); Chrome ext not connected. Revisit with browser.
+- GA Augusta: FYE 12/31/2025 ACFR not yet published (latest posted: 6/30/2025 quarterly report; ACFRs appear ~mid-year following).
+- GA Savannah: FYE 12/31/2025 ACFR not found/not yet published; savannahga.gov doc center latest indexed CAFR is 2019.
+- ID Boise: FY25 ACFR published but ONLY as Issuu flipbook (issuu.com/cityofboise/docs/annual_comprehensive_financial_report_2025); no direct PDF URL. Revisit with browser/manual.
+- ID Meridian: Publishes only basic audited financial statements (77pp, no statistical section, not an ACFR) -> per rule, skipped.
+[Set4 batch B - 2026-07-07] CA/CO/CT cities:
+CA Long Beach: SAVED CA/CA_City_Long_Beach_FY2509_ACFR.pdf (FYE 9/30/2025, 224pp)
+CA Oakland: SAVED CA/CA_City_Oakland_FY2506_ACFR.pdf (FYE 6/30/2025, 224pp)
+CA Bakersfield: SKIPPED - ACFR page (bakersfieldcity.us, CivicPlus HCMS) renders documents via JS only; no direct PDF path after 2 searches
+CA Anaheim: SAVED CA/CA_City_Anaheim_FY2506_ACFR.pdf (FYE 6/30/2025, 212pp)
+CO Colorado Springs: SKIPPED - CY2025 (FYE 12/31/2025) ACFR not yet published; latest is 2024. ACFR page is JS-rendered.
+CO Aurora: SKIPPED - not yet published; latest posted is 2024 ACFR (auroragov.org)
+CO Fort Collins: SAVED CO/CO_City_Fort_Collins_FY2512_ACFR.pdf (FYE 12/31/2025, 253pp)
+CO Lakewood: SKIPPED - not yet published; Financial Reports page (lakewoodco.gov) lists 2024 ACFR as latest
+CT Bridgeport: SKIPPED - FY2025 ACFR completed per Feb 2026 council BAC minutes but not posted; ACFR page lists FY2024 as latest; guessed URLs 404
+CT New Haven: SKIPPED - FY2025 ACFR published (verified by text extraction: "CITY OF NEW HAVEN...ACFR YEAR ENDED JUNE 30, 2025") but newhavenct.gov document endpoint returns 403 to all non-browser clients (curl + host-side fetch, multiple header sets)
+CT Stamford: SKIPPED - Annual Reports and Budgets page JS-rendered, no document links retrievable; no direct PDF path after 2 searches
+CT Hartford: SKIPPED - FY2025 ACFR verified on portal.ct.gov (OPM MARB, hartford--audit-report-06-30-2025.pdf) but host TLS-blocks non-browser downloads (curl SSL err 35, host-side fetch failed); no copy on hartfordct.gov; not in Wayback

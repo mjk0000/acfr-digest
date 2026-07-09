@@ -21,6 +21,7 @@ Target figures extracted from the General Fund column only:
 """
 
 import argparse
+import csv
 import logging
 import re
 import subprocess
@@ -125,6 +126,12 @@ OFS_TOTAL_PATTERN = re.compile(r'\btotal\b.*\bfinancing\b|\btotal\b.*\bother\b.*
 
 END_FB_PATTERN = re.compile(r'\bend\s+of\s+year\b|\bending\s+fund\b|\bend\s+of\s+period\b')
 
+# A complete comma-grouped number (optionally $-prefixed / parenthesized).
+# THE single definition — previously five identical copies had accreted.
+# Note: _VALID_NUM in the fused-number splitter uses the reversed wrapper
+# order '\(?\$?' deliberately (matches '($1,234)'); do not "unify" it blindly.
+_COMPLETE_NUM = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
+
 # Reconciliation stop signals (content that indicates reconciliation section)
 RECONCILIATION_SIGNALS = [
     re.compile(r'\breconciliation\b'),
@@ -191,7 +198,7 @@ def parse_number(text: str) -> Optional[float]:
         return None
     t = normalize(text).strip()
     # Bare dash or em-dash → zero (Rule 8)
-    if t in ('-', '--', '—', '–', ''):
+    if t in ('-', '--', ''):  # normalize() already folded em/en dashes to '-'
         return 0.0
     # Strip currency symbol
     t = t.replace('$', '').strip()
@@ -205,6 +212,12 @@ def parse_number(text: str) -> Optional[float]:
     # Trailing ) without matching ( is a column-separator artifact (e.g. Nashville)
     elif t.endswith(')') and not t.startswith('('):
         t = t[:-1].strip()
+    # Comma-grouping validation: a token containing commas must be a
+    # well-formed grouped number. Malformed fusions that escape the token
+    # repairs ('5,3781' = 5,378 fused with a neighbor's leading 1) would
+    # otherwise fabricate digit-concatenated values the band guard can't see.
+    if ',' in t and not re.fullmatch(r'\d{1,3}(?:,\d{3})+', t):
+        return None
     # Strip commas and spaces
     t = t.replace(',', '').replace(' ', '')
     try:
@@ -451,6 +464,8 @@ def _split_dot_leader_token(w: Dict) -> Optional[List[Dict]]:
     the original x1 (where number glyphs truthfully end), keeping it inside
     its own column band and clear of neighbors.
     """
+    if w['x1'] <= w['x0']:
+        return None  # degenerate box — synthesized positions would invert
     m = _DOT_INTERLEAVE.match(w['text'])
     if not m:
         return None
@@ -481,6 +496,8 @@ def _split_fused_number(w: Dict) -> Optional[List[Dict]]:
     them safely). Positions split proportionally by character count.
     """
     txt = w['text']
+    if w['x1'] <= w['x0']:
+        return None  # degenerate box
     if not _FUSED_HINT.search(txt) or not re.fullmatch(r'\(?\$?[\d,()]+\)?', txt):
         return None
     splits = [(txt[:i], txt[i:]) for i in range(4, len(txt) - 3)
@@ -639,7 +656,7 @@ def identify_general_fund_col(columns: List[Dict]) -> Optional[Dict]:
     _DQ_KEYWORDS = [
         'capital', 'cip', 'improvement', 'infrastructure', 'construction', 'project',
         'debt', 'bond', 'sinking', 'grant', 'water', 'sewer', 'stormwater', 'parking',
-        'transit', 'utility', 'enterprise', 'nonmajor', 'total', 'combining', 'combined',
+        'transit', 'utility', 'enterprise', 'nonmajor', 'total', 'combining', 'combined', 'organic',
         'activities', 'special', 'service',
     ]
     candidates = []
@@ -718,11 +735,10 @@ def refine_gf_band(rows: List[List[Dict]], data_start_idx: int, gf_col: Dict) ->
     pages (SF) produce no complete numbers in-column and correctly fall back.
     Mutates gf_col in place; returns True when refined.
     """
-    _NUM = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
     toks = []
     for row in rows[data_start_idx:]:
         for w in row:
-            if _NUM.match(w['text'].replace('_', '')):
+            if _COMPLETE_NUM.match(w['text'].replace('_', '')):
                 toks.append(w)
     if len(toks) < 4:
         return False
@@ -762,10 +778,9 @@ def derive_label_gutter(rows: List[List[Dict]], default: float = 180.0) -> float
     Dense statements that compress the gutter below 180 get the benefit;
     everything else behaves exactly as the historical 180pt constant.
     """
-    _NUM = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
     xs = []
     for row in rows:
-        nums = [w for w in row if _NUM.match(w['text'].replace('_', ''))]
+        nums = [w for w in row if _COMPLETE_NUM.match(w['text'].replace('_', ''))]
         if len(nums) >= 2:
             xs.extend(w['x0'] for w in nums)
     if not xs:
@@ -806,12 +821,14 @@ def extract_value_in_column(row_words: List[Dict], col_left: float, col_right: f
     if not numeric:
         return None
 
-    # Split-number fix: if the rightmost in-column token ends with a digit, check
-    # whether the immediately adjacent token to the right starts with ',' — indicating
-    # the number was split across the column boundary (e.g. SF RevEx: '6' | ',619,395').
-    # Only check beyond the +5pt zone already collected above to avoid double-counting.
+    # Split-number fix: if the rightmost in-column token ends with a digit AND
+    # is NOT already a complete number, check for a comma-continuation just
+    # outside the band (SF RevEx: '6' | ',619,395'). Requiring incompleteness
+    # stops a neighbor's kerning-split fragment from grafting onto an already
+    # complete in-band value ('338,871' + ',234' → fabricated 338,871,234).
     rightmost = max(numeric, key=lambda w: w['x0'])
-    if rightmost['text'].rstrip('_')[-1:].isdigit():
+    if (rightmost['text'].rstrip('_')[-1:].isdigit()
+            and not _COMPLETE_NUM.match(rightmost['text'].replace('_', ''))):
         continuation = [w for w in row_words
                         if col_right + _RTOL < word_x_center(w) < col_right + _RTOL + 15
                         and w['text'].lstrip('_').startswith(',')]
@@ -824,29 +841,26 @@ def extract_value_in_column(row_words: List[Dict], col_left: float, col_right: f
     # a '1)' token and poison the join ('1)6,485' → unparseable — Kentucky).
     # Drop them when a real comma-formatted number is also present in the band.
     if len(numeric) > 1:
-        _REAL_NUM = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
-        if any(_REAL_NUM.match(t['text'].replace('_', '')) for t in numeric):
+        if any(_COMPLETE_NUM.match(t['text'].replace('_', '')) for t in numeric):
             numeric = [t for t in numeric if not re.match(r'^\d{1,2}\)$', t['text'])]
+
+    # Sanity guard FIRST — it must veto the dash rule below, not the reverse:
+    # two independently complete comma-formatted numbers in one band means the
+    # band spans two real columns; any single-token heuristic on such a band
+    # is unsafe. Refuse (NOT FOUND is the safe failure mode).
+    complete_nums = [t for t in numeric if _COMPLETE_NUM.match(t['text'].replace('_', ''))]
+    if len(complete_nums) >= 2:
+        return None
 
     # A LONE DASH followed by a complete number is the GF's zero next to a
     # neighbor column's value caught by band tolerance (Salt Lake: '—' +
     # '18,635,719' joined to -18,635,719, a fabricated negative). The dash IS
     # the value.
     if len(numeric) > 1:
-        _REAL_NUM2 = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
         first_txt = numeric[0]['text'].replace('_', '').strip()
         if (first_txt in ('-', '–', '—', '--')
-                and any(_REAL_NUM2.match(t['text'].replace('_', '')) for t in numeric[1:])):
+                and any(_COMPLETE_NUM.match(t['text'].replace('_', '')) for t in numeric[1:])):
             return 0.0
-
-    # Sanity guard: two independently complete comma-formatted numbers in one band
-    # means the band spans two real columns (merged headers on dense multi-fund
-    # statements). Joining them fabricates an absurd value — refuse and return
-    # None (NOT FOUND is the safe failure mode; a fabricated number is not).
-    _FULL_NUM = re.compile(r'^\$?\(?\d{1,3}(?:,\d{3})+\)?$')
-    complete_nums = [t for t in numeric if _FULL_NUM.match(t['text'].replace('_', ''))]
-    if len(complete_nums) >= 2:
-        return None
 
     combined = ''.join(t['text'] for t in numeric).replace('_', '').strip()
 
@@ -979,6 +993,7 @@ def extract_bs_figures(
         page = pdf.pages[page_idx]
         words = get_page_words(page)
         all_rows = cluster_into_rows(words)
+        prev_lbl, prev_val = '', None  # wrapped-header state never crosses pages
 
         for row in all_rows:
             if not row:
@@ -1044,15 +1059,20 @@ def extract_bs_figures(
             if bs_total_pending and results[bs_total_pending] is NOT_FOUND:
                 if lbl == '' and val is not None:
                     results[bs_total_pending] = val
+                    fallback_captured.add(bs_total_pending)  # overwritable by labeled total
                 bs_total_pending = None
 
             if not in_fund_balance:
-                if ('total liabilities' in lbl or 'totalliabilities' in clbl):
+                # 'deferred' exclusion on BOTH paths: 'Total liabilities and
+                # deferred inflows of resources' is a combined line, not the
+                # liabilities total (audit P1).
+                if (('total liabilities' in lbl or 'totalliabilities' in clbl)
+                        and 'deferred' not in lbl):
                     if val is not None:
                         if results['total_liabilities'] is NOT_FOUND or 'total_liabilities' in fallback_captured:
                             results['total_liabilities'] = val
                             fallback_captured.discard('total_liabilities')
-                    elif results['total_liabilities'] is NOT_FOUND and 'deferred' not in lbl:
+                    elif results['total_liabilities'] is NOT_FOUND:
                         bs_total_pending = 'total_liabilities'
                 # Fallback: blank-label row in liabilities section after items
                 elif (results['total_liabilities'] is NOT_FOUND and in_liabilities_section
@@ -1081,12 +1101,13 @@ def extract_bs_figures(
                 in_fund_balance = True
 
             # --- Bare 'Total' closing an open category's sub-item list ---
-            # While a category (e.g. 'Restricted for:') is accumulating sub-items,
-            # an unlabeled 'Total' row is that category's subtotal — NOT total fund
-            # balances. Capture it and keep scanning; treating it as the grand total
-            # truncates the whole fund-balance section.
+            # While a category (e.g. 'Restricted for:') is OPEN, an unlabeled
+            # 'Total' row is that category's subtotal — NOT total fund
+            # balances — even when the sub-items were unreadable (fb_has_items
+            # False): promoting it to the grand total would both fabricate the
+            # total AND stop the scan before the remaining categories.
             if (in_fund_balance and lbl == 'total' and val is not None
-                    and current_fb_cat is not None and fb_has_items):
+                    and current_fb_cat is not None):
                 if results[current_fb_cat] is NOT_FOUND:
                     results[current_fb_cat] = val
                 current_fb_cat = None
@@ -1245,7 +1266,15 @@ def extract_revex_figures(
             # --- Two-row OFS label: label on one row, value on the next ---
             # Some PDFs split "Total other financing sources (uses)" across two rows.
             if ofs_total_pending:
-                if val is not None and not NET_CHANGE_PATTERN.search(lbl):
+                # Consumption exclusions must mirror EVERY stop-row form
+                # (spaced, fused, wrapped) plus beginning-of-year balances —
+                # any of these arriving right after a pending would be
+                # recorded as the OFS total (audit F2).
+                _blocked = (NET_CHANGE_PATTERN.search(lbl)
+                            or 'netchange' in clbl or 'beginning' in clbl
+                            or 'endof' in clbl or 'excess' in clbl
+                            or re.search(r'\bnet\s+(changes?|increase|decrease)\s+in\b', lbl))
+                if val is not None and not _blocked:
                     results['total_ofs'] = val
                     in_ofs_section = False
                 ofs_total_pending = False
@@ -1262,7 +1291,7 @@ def extract_revex_figures(
             # Labeled total may overwrite a fallback capture (blank-label group
             # subtotals, e.g. under 'Taxes:', can precede the real total — audit F2).
             if ((re.search(r'\btotal\s+revenues?\b', lbl) or clbl.startswith('totalrevenue'))
-                    and val is not None):
+                    and 'financing' not in clbl and val is not None):
                 if results['total_revenues'] is NOT_FOUND or 'total_revenues' in fallback_captured:
                     results['total_revenues'] = val
                     fallback_captured.discard('total_revenues')
@@ -1279,7 +1308,7 @@ def extract_revex_figures(
 
             # --- Total Expenditures ---
             if ((re.search(r'\btotal\s+expenditures?\b', lbl) or clbl.startswith('totalexpenditure'))
-                    and val is not None):
+                    and 'financing' not in clbl and val is not None):
                 if results['total_expenditures'] is NOT_FOUND or 'total_expenditures' in fallback_captured:
                     results['total_expenditures'] = val
                     fallback_captured.discard('total_expenditures')
@@ -1434,6 +1463,7 @@ def get_column_structure(page, logger: logging.Logger) -> Optional[Dict]:
             alt_gf = identify_general_fund_col(alt_cols) if alt_cols else None
             if alt_gf:
                 columns, gf_col = alt_cols, alt_gf
+                logger.info("GF column found via largest-gap header split (fallback 2)")
 
     # Fallback 3: backward scan — when both gap strategies pick a split point that
     # lands on label-zone-only rows (e.g. "Revenues:" at x=55), scan backward to
@@ -1454,6 +1484,7 @@ def get_column_structure(page, logger: logging.Logger) -> Optional[Dict]:
             fb_gf = identify_general_fund_col(fb_cols) if fb_cols else None
             if fb_gf:
                 columns, gf_col = fb_cols, fb_gf
+                logger.info("GF column found via backward split scan (fallback 3)")
                 break
 
     # Fallback 4: dense statements can merge adjacent headers into one cluster
@@ -1508,28 +1539,6 @@ def get_column_structure(page, logger: logging.Logger) -> Optional[Dict]:
 
 
 # ---------------------------------------------------------------------------
-# pdftotext fallback (Layer 2)
-# ---------------------------------------------------------------------------
-
-def pdftotext_available() -> bool:
-    try:
-        subprocess.run(['pdftotext', '-v'], capture_output=True, timeout=5)
-        return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-def extract_via_pdftotext(pdf_path: Path, page_num: int) -> str:
-    """Run pdftotext -layout on a single page and return the text."""
-    result = subprocess.run(
-        ['pdftotext', '-layout', '-f', str(page_num), '-l', str(page_num),
-         str(pdf_path), '-'],
-        capture_output=True, text=True, timeout=30
-    )
-    return result.stdout
-
-
-# ---------------------------------------------------------------------------
 # OCR fallback (Layer 3)
 # ---------------------------------------------------------------------------
 
@@ -1542,7 +1551,7 @@ def is_scanned_pdf(pdf_path: Path) -> bool:
         lines = result.stdout.strip().splitlines()
         # pdffonts output: 2-line header + one line per font. No fonts = scanned.
         return len(lines) <= 2
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except Exception:
         return False
 
 
@@ -1600,12 +1609,15 @@ class OCRPage:
             imgs = sorted(Path(td).glob('*.png'))
             if not imgs:
                 return []
-            img = Image.open(imgs[0])
-            if full:
-                self.width = img.width * _PT_PER_PX
-                self.height = img.height * _PT_PER_PX
             try:
-                data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+                img = Image.open(imgs[0])
+                if full:
+                    self.width = img.width * _PT_PER_PX
+                    self.height = img.height * _PT_PER_PX
+                # timeout: an unbounded tesseract hang would silently freeze a
+                # detached batch — worse than a crash.
+                data = pytesseract.image_to_data(img, timeout=120,
+                                                 output_type=pytesseract.Output.DICT)
             except Exception:
                 return []
         words = []
@@ -2034,7 +2046,7 @@ def process_pdf(pdf_path: Path, logger: logging.Logger) -> Dict[str, Any]:
 
     except Exception as e:
         logger.exception(f"Unhandled error processing {pdf_path.name}: {e}")
-        notes.append(f"Processing error: {e}")
+        notes.append(f"Processing error: {str(e)[:300]}")
 
     result['Extraction Notes'] = ' | '.join(notes) if notes else ''
     return result
@@ -2087,6 +2099,11 @@ def write_excel(all_results: List[Dict], output_path: Path, logger: logging.Logg
                 cell.number_format = number_format
                 cell.alignment    = Alignment(horizontal='right')
             else:
+                if isinstance(value, str):
+                    # openpyxl raises IllegalCharacterError on control chars,
+                    # which mojibake-derived notes/entity names can contain —
+                    # one bad char must not vaporize a finished batch.
+                    value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', value)
                 cell.value     = value
                 cell.alignment = Alignment(horizontal='left',
                                            wrap_text=(col_name == 'Extraction Notes'))
@@ -2192,6 +2209,20 @@ def print_summary(all_results: List[Dict]):
     print("\n" + "=" * 80)
 
 
+def _log_toolchain_versions(logger: logging.Logger):
+    """Byte-identical determinism is hostage to these versions — log them so a
+    determinism-check failure is immediately attributable to an upgrade."""
+    import pdfplumber as _pp
+    logger.info(f"pdfplumber {getattr(_pp, '__version__', '?')}")
+    for tool, args_ in (('pdftoppm', ['-v']), ('tesseract', ['--version'])):
+        try:
+            r = subprocess.run([tool] + args_, capture_output=True, text=True, timeout=10)
+            first = (r.stdout or r.stderr).strip().splitlines()[0]
+            logger.info(f"{tool}: {first}")
+        except Exception:
+            logger.info(f"{tool}: not available")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Parse ACFR PDFs and extract General Fund figures to Excel.'
@@ -2229,20 +2260,40 @@ def main():
 
     logger.info(f"Processing {len(input_paths)} PDF(s)")
     logger.info(f"Output: {args.output}")
+    _log_toolchain_versions(logger)
 
-    # Process each PDF
+    # Process each PDF; append each row to a CSV checkpoint so a crash at
+    # file N (or a failed final Excel write) never forfeits the whole batch.
+    output_path = Path(args.output)
+    checkpoint_path = output_path.with_suffix('.checkpoint.csv')
     all_results = []
-    for pdf_path in input_paths:
-        row = process_pdf(pdf_path, logger)
-        all_results.append(row)
+    with open(checkpoint_path, 'w', newline='', encoding='utf-8') as ckpt:
+        writer = csv.DictWriter(ckpt, fieldnames=OUTPUT_COLUMNS, extrasaction='ignore')
+        writer.writeheader()
+        for pdf_path in input_paths:
+            try:
+                row = process_pdf(pdf_path, logger)
+            except Exception as e:
+                # Belt-and-suspenders: process_pdf has its own try, but code
+                # outside it (e.g. pre-open probes) must not abort the batch.
+                logger.error(f"{pdf_path.name}: unhandled per-file error: {e}")
+                row = {col: NOT_FOUND for col in OUTPUT_COLUMNS}
+                row['Source File'] = pdf_path.name
+                row['Extraction Notes'] = f"Unhandled error: {str(e)[:300]}"
+            all_results.append(row)
+            writer.writerow({k: row.get(k, NOT_FOUND) for k in OUTPUT_COLUMNS})
+            ckpt.flush()
 
     # Print summary to stdout
     print_summary(all_results)
 
-    # Write Excel
-    output_path = Path(args.output)
-    write_excel(all_results, output_path, logger)
-    print(f"\nExcel written: {output_path.resolve()}")
+    # Write Excel; on failure the checkpoint CSV holds every row.
+    try:
+        write_excel(all_results, output_path, logger)
+        print(f"\nExcel written: {output_path.resolve()}")
+    except Exception as e:
+        logger.error(f"Excel write failed ({e}) — results preserved in {checkpoint_path}")
+        raise
 
 
 if __name__ == '__main__':
