@@ -3,6 +3,11 @@ pdfplumber==0.11.8
 openpyxl>=3.1.0,<4
 streamlit>=1.40,<2
 pandas>=2.0,<3
+# pyarrow 25.0.0 segfaults (mimalloc allocator race) inside Streamlit's
+# dataframe serialization — killed the hosted app mid-session on 2026-07-10.
+# 21.0.0 is the version the audited local verification ran on. Do not unpin
+# without re-running the UI e2e flow several times.
+pyarrow==21.0.0
 # OCR extras (optional locally; needed on hosted deploys for scanned PDFs)
 pytesseract>=0.3.10
 Pillow>=10

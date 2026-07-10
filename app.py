@@ -156,7 +156,10 @@ def styled_results_table(results):
         return GAP_STYLE if pd.isna(v) else ''
 
     styler = df.style.format(fmt)
-    map_cells = getattr(styler, 'map', styler.applymap)  # pandas <2.1 fallback
+    # Styler.map arrived in pandas 2.1; applymap was removed in pandas 3.
+    # Attribute access must be lazy — an eager getattr default evaluates
+    # the missing attribute and raises.
+    map_cells = styler.map if hasattr(styler, 'map') else styler.applymap
     return map_cells(gap, subset=list(NUMERIC_COLS))
 
 
