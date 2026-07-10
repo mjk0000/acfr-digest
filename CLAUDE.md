@@ -14,8 +14,8 @@ Known-limitations tab), `KNOWN_LIMITATIONS.md`, `README.md`, MIT `LICENSE`,
 cell-for-cell. UI: `streamlit run app.py` (port 8510 via .claude/launch.json).
 Hosted deploy is config-only (requirements.txt + packages.txt) but NOT
 deployed. Pushed 2026-07-10 to github.com/mjk0000/acfr-digest (PRIVATE repo,
-tag v0.1.0a1 included). No git credentials persist on this machine — pushing
-needs `gh auth login` (or a keychain PAT) first.
+tag v0.1.0a1 included). gh CLI is authenticated (HTTPS credential helper) —
+plain `git push` works.
 
 ## Current state (2026-07-07, post-independent-audit)
 The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDITED.
