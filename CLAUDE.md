@@ -13,9 +13,12 @@ Known-limitations tab), `KNOWN_LIMITATIONS.md`, `README.md`, MIT `LICENSE`,
 (Philadelphia + zip of San Antonio/Charlotte) download matches a CLI run
 cell-for-cell. UI: `streamlit run app.py` (port 8510 via .claude/launch.json).
 Hosted deploy is config-only (requirements.txt + packages.txt) but NOT
-deployed. Pushed 2026-07-10 to github.com/mjk0000/acfr-digest (PRIVATE repo,
-tag v0.1.0a1 included). gh CLI is authenticated (HTTPS credential helper) —
-plain `git push` works.
+deployed. Pushed 2026-07-10 to github.com/mjk0000/acfr-digest (now PUBLIC —
+Mike flipped visibility for the Streamlit Cloud deploy; tag v0.1.0a1 included).
+gh CLI is authenticated (HTTPS credential helper) — plain `git push` works.
+DEPLOYED 2026-07-10 to Streamlit Community Cloud: https://acfr-digest.streamlit.app
+(public; pushes to main auto-redeploy). Anonymous visitors go through a
+guest-session redirect — curl needs a cookie jar to follow it.
 
 ## Current state (2026-07-07, post-independent-audit)
 The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDITED.
