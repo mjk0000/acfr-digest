@@ -6,3 +6,9 @@ FY25_City_ACFRs_Set3/
 
 # macOS
 .DS_Store
+
+# Packaging artifacts
+build/
+*.egg-info/
+dist/
+__pycache__/

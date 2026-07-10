@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acfr-digest"
+version = "0.1.0a1"
+description = "Extract General Fund figures from municipal ACFR PDFs into an Excel workbook"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Mike Keeley", email = "mkeeley.personal@gmail.com" }]
+requires-python = ">=3.9"
+dependencies = [
+    # pdfplumber is pinned exactly: the parser's byte-identical determinism
+    # (and its 22 consecutive clean regression gates) are hostage to this
+    # version. Do not bump without rerunning the Set1+Set2 gates.
+    "pdfplumber==0.11.8",
+    "openpyxl>=3.1.0,<4",
+    "streamlit>=1.40,<2",
+    "pandas>=2.0,<3",
+]
+
+[project.optional-dependencies]
+# OCR fallback for scanned / broken-encoding PDFs. Also requires the system
+# binaries: `brew install poppler tesseract` (macOS) or
+# `apt install poppler-utils tesseract-ocr` (Debian/Ubuntu).
+ocr = ["pytesseract>=0.3.10", "Pillow>=10"]
+
+[project.scripts]
+acfr-digest = "acfr_digest_cli:main"
+
+[tool.setuptools]
+py-modules = ["parse_cafr", "acfr_digest_cli"]

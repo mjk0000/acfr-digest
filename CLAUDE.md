@@ -1,5 +1,20 @@
 # ACFR Digest — Project Instructions
 
+## Alpha packaging (2026-07-10, tag v0.1.0a1)
+The audited parser is now packaged for external testers WITHOUT modification:
+`pyproject.toml` (package `acfr-digest`, console entry `acfr-digest` via the
+`acfr_digest_cli.py` wrapper — adds only `--version`), `app.py` (Streamlit
+drag-and-drop UI: PDFs or zipped folders, per-file progress, NOT-FOUND gap
+styling + ⚠️ verify-manually badges, xlsx/checkpoint-CSV/log downloads,
+Known-limitations tab), `KNOWN_LIMITATIONS.md`, `README.md`, MIT `LICENSE`,
+`tests/smoke.py` (Set2 vs audited baseline — green). Verified: smoke green;
+`acfr-digest` output byte-identical checkpoint CSV + cell-identical xlsx vs
+`python3 parse_cafr.py` on Set2, both matching the audited baseline; UI e2e
+(Philadelphia + zip of San Antonio/Charlotte) download matches a CLI run
+cell-for-cell. UI: `streamlit run app.py` (port 8510 via .claude/launch.json).
+Hosted deploy is config-only (requirements.txt + packages.txt) but NOT
+deployed — GitHub push awaits Mike's go-ahead.
+
 ## Current state (2026-07-07, post-independent-audit)
 The Set3 batch (100 state/county/city ACFRs) is COMPLETE and INDEPENDENTLY AUDITED.
 Final deliverable: `FY25_Set3_results.xlsx` (audited run), log `set3_run_final.log`,

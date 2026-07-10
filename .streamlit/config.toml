@@ -1,0 +1,7 @@
+[server]
+# ACFR PDFs run large (Rockville is ~24 MB; state ACFRs larger still).
+maxUploadSize = 1000
+headless = true
+
+[browser]
+gatherUsageStats = false
