@@ -7,9 +7,11 @@ to what the CLI produces for the same files.
 """
 
 import csv
+import gc
 import io
 import logging
 import re
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -50,30 +52,42 @@ def needs_verification(row):
     return bool(CAUTION_PATTERN.search(file_notes(row)))
 
 
-def _write_unique(tdir: Path, name: str, data: bytes) -> Path:
+def _unique(tdir: Path, name: str) -> Path:
     dest, counter = tdir / name, 1
     while dest.exists():
         dest = tdir / f"{Path(name).stem}_{counter}{Path(name).suffix}"
         counter += 1
-    dest.write_bytes(data)
+    return dest
+
+
+def _stream_to(dest: Path, fobj) -> Path:
+    with open(dest, 'wb') as out:
+        shutil.copyfileobj(fobj, out, length=1 << 20)
     return dest
 
 
 def save_uploads(uploads, tdir: Path):
-    """Save uploaded PDFs — and PDFs inside uploaded zips — into tdir."""
+    """Stream uploaded PDFs — and PDFs inside uploaded zips — onto disk.
+
+    Everything is streamed (never .read()/.getvalue() of a whole member):
+    hosted capacity is memory-bound, so peak RAM must stay at one buffer,
+    not a second full copy of the batch.
+    """
     paths = []
     for uf in uploads:
         if uf.name.lower().endswith('.zip'):
-            with zipfile.ZipFile(io.BytesIO(uf.getvalue())) as zf:
+            with zipfile.ZipFile(uf) as zf:
                 for info in zf.infolist():
                     name = Path(info.filename).name
                     if (info.is_dir() or '__MACOSX' in info.filename
                             or name.startswith('.')
                             or not name.lower().endswith('.pdf')):
                         continue
-                    paths.append(_write_unique(tdir, name, zf.read(info)))
+                    with zf.open(info) as src:
+                        paths.append(_stream_to(_unique(tdir, name), src))
         else:
-            paths.append(_write_unique(tdir, Path(uf.name).name, uf.getvalue()))
+            uf.seek(0)
+            paths.append(_stream_to(_unique(tdir, Path(uf.name).name), uf))
     return sorted(paths, key=lambda p: p.name.lower())
 
 
@@ -99,37 +113,35 @@ def checkpoint_csv(results) -> bytes:
     return buf.getvalue().encode('utf-8')
 
 
-def run_extraction(uploads):
+def run_extraction(workdir: Path, pdf_paths):
     logger, log_buf = make_logger()
     results = []
-    with tempfile.TemporaryDirectory() as td:
-        tdir = Path(td)
-        pdf_paths = save_uploads(uploads, tdir)
-        if not pdf_paths:
-            st.error('No PDFs found in the upload.')
-            return None
-        n = len(pdf_paths)
-        progress = st.progress(0.0, text=f'0 of {n} files done')
-        for i, pdf_path in enumerate(pdf_paths):
-            with st.status(f'Processing {pdf_path.name} ({i + 1} of {n}) — '
-                           'typically 1–3 minutes; scanned/OCR files take '
-                           'several more') as status:
-                try:
-                    row = process_pdf(pdf_path, logger)
-                except Exception as e:
-                    row = {col: NOT_FOUND for col in OUTPUT_COLUMNS}
-                    row['Source File'] = pdf_path.name
-                    row['Extraction Notes'] = f'Unhandled error: {str(e)[:300]}'
-                results.append(row)
-                found = sum(1 for c in NUMERIC_COLS if row.get(c, NOT_FOUND) != NOT_FOUND)
-                icon = '⚠️' if needs_verification(row) else ('❌' if found == 0 else '✅')
-                status.update(state='complete',
-                              label=f'{icon} {pdf_path.name} — {found}/{len(NUMERIC_COLS)} '
-                                    'figures extracted')
-            progress.progress((i + 1) / n, text=f'{i + 1} of {n} files done')
-        out_path = tdir / 'acfr_digest_results.xlsx'
-        write_excel(results, out_path, logger)
-        xlsx_bytes = out_path.read_bytes()
+    n = len(pdf_paths)
+    progress = st.progress(0.0, text=f'0 of {n} files done')
+    for i, pdf_path in enumerate(pdf_paths):
+        with st.status(f'Processing {pdf_path.name} ({i + 1} of {n}) — '
+                       'typically 1–3 minutes; scanned/OCR files take '
+                       'several more') as status:
+            try:
+                row = process_pdf(pdf_path, logger)
+            except Exception as e:
+                row = {col: NOT_FOUND for col in OUTPUT_COLUMNS}
+                row['Source File'] = pdf_path.name
+                row['Extraction Notes'] = f'Unhandled error: {str(e)[:300]}'
+            results.append(row)
+            found = sum(1 for c in NUMERIC_COLS if row.get(c, NOT_FOUND) != NOT_FOUND)
+            icon = '⚠️' if needs_verification(row) else ('❌' if found == 0 else '✅')
+            status.update(state='complete',
+                          label=f'{icon} {pdf_path.name} — {found}/{len(NUMERIC_COLS)} '
+                                'figures extracted')
+        # Free the file's disk and the parser's working set before the next
+        # one — long batches must not accumulate.
+        pdf_path.unlink(missing_ok=True)
+        gc.collect()
+        progress.progress((i + 1) / n, text=f'{i + 1} of {n} files done')
+    out_path = workdir / 'acfr_digest_results.xlsx'
+    write_excel(results, out_path, logger)
+    xlsx_bytes = out_path.read_bytes()
     return {'results': results, 'xlsx': xlsx_bytes,
             'csv': checkpoint_csv(results),
             'log': log_buf.getvalue().encode('utf-8')}
@@ -238,15 +250,41 @@ def main():
                 'or broken-encoding PDFs will return honest NOT FOUNDs '
                 'instead of OCR-recovered figures. Install notes are in the '
                 'README.')
+        # The uploader key is generational: after ingest we bump it and rerun,
+        # so Streamlit drops the old widget (and its in-memory upload buffers)
+        # before the memory-hungry parsing phase starts.
+        gen = st.session_state.setdefault('uploader_gen', 0)
         uploads = st.file_uploader(
             'Drop ACFR PDFs here — or a .zip to upload a whole folder',
             type=['pdf', 'zip'], accept_multiple_files=True,
+            key=f'uploads_{gen}',
             help='Browsers cannot drag folders — zip a folder to upload it '
                  'whole.')
+        st.caption('Hosted note: one run comfortably handles ~10–15 PDFs '
+                   '(a few hundred MB); keep this tab open while it works. '
+                   'For bigger batches, use the CLI — see the README.')
         if uploads and st.button('Extract General Fund figures', type='primary'):
-            run = run_extraction(uploads)
-            if run:
-                st.session_state['run'] = run
+            stale = st.session_state.pop('workdir', None)
+            if stale:
+                shutil.rmtree(stale, ignore_errors=True)
+            workdir = Path(tempfile.mkdtemp(prefix='acfr-digest-'))
+            pdf_paths = save_uploads(uploads, workdir)
+            if not pdf_paths:
+                st.error('No PDFs found in the upload.')
+                shutil.rmtree(workdir, ignore_errors=True)
+            else:
+                st.session_state['workdir'] = str(workdir)
+                st.session_state['pending'] = [str(p) for p in pdf_paths]
+                st.session_state['uploader_gen'] = gen + 1
+                st.rerun()
+        if 'pending' in st.session_state:
+            pdf_paths = [Path(p) for p in st.session_state.pop('pending')]
+            workdir = Path(st.session_state['workdir'])
+            try:
+                st.session_state['run'] = run_extraction(workdir, pdf_paths)
+            finally:
+                shutil.rmtree(workdir, ignore_errors=True)
+                st.session_state.pop('workdir', None)
         if 'run' in st.session_state:
             render_results(st.session_state['run'])
 

@@ -76,6 +76,19 @@ Identity checks can't catch an error that is internally self-consistent, and
 new PDF layouts can fail in new ways. For publication-grade use, verify
 flagged rows and spot-check material figures against the source document.
 
+## Hosted app capacity
+
+The public instance (acfr-digest.streamlit.app) runs on a small shared
+container (~2.7 GB memory). Practical envelope: **one run comfortably handles
+roughly 10–15 typical city ACFRs — a few hundred MB, zipped or loose.** Files
+process sequentially at roughly 2–5 minutes each on cloud hardware, and the
+browser tab must stay open for the whole run; if the connection drops or the
+run is interrupted, partial results are lost and the batch must be re-run.
+
+For larger batches, use the CLI instead (`pipx install`, then
+`acfr-digest --dir <folder>`): no upload, no session to keep alive, no shared
+memory cap, and a row-by-row checkpoint CSV written as it goes.
+
 ## Scope
 
 U.S. state and local government ACFRs, in English, with GASB-style

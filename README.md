@@ -20,6 +20,11 @@ Drop PDFs (or a `.zip` of a folder — browsers can't upload folders directly)
 into the uploader and download the results workbook. Files take 1–3 minutes
 each; scanned/OCR-path files take longer.
 
+**Large batches:** the hosted app is sized for ~10–15 PDFs per run (see
+[KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)). For anything bigger, use the
+CLI below — no upload, no session to keep alive, and a row-by-row checkpoint
+CSV as crash insurance.
+
 ## CLI
 
 ```bash
