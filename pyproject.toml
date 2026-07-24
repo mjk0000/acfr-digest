@@ -4,23 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acfr-digest"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Extract General Fund figures from municipal ACFR PDFs into an Excel workbook"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Mike Keeley", email = "mkeeley.personal@gmail.com" }]
 requires-python = ">=3.9"
+# Core = the CLI parser only. The Streamlit UI is an extra ([ui]) so
+# pipx/pip installs for CLI users stay lean.
 dependencies = [
     # pdfplumber is pinned exactly: the parser's byte-identical determinism
     # (and its 22 consecutive clean regression gates) are hostage to this
     # version. Do not bump without rerunning the Set1+Set2 gates.
     "pdfplumber==0.11.8",
     "openpyxl>=3.1.0,<4",
-    "streamlit>=1.40,<2",
-    "pandas>=2.0,<3",
-    # 25.0.0 segfaults in Streamlit's dataframe serialization (see
-    # requirements.txt); 21.0.0 is the verified version.
-    "pyarrow==21.0.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +25,15 @@ dependencies = [
 # binaries: `brew install poppler tesseract` (macOS) or
 # `apt install poppler-utils tesseract-ocr` (Debian/Ubuntu).
 ocr = ["pytesseract>=0.3.10", "Pillow>=10"]
+# Drag-and-drop web UI (streamlit run app.py). Kept in sync with
+# requirements.txt, which the hosted deploy installs from.
+ui = [
+    "streamlit>=1.40,<2",
+    "pandas>=2.0,<3",
+    # 25.0.0 segfaults in Streamlit's dataframe serialization (see
+    # requirements.txt); 21.0.0 is the verified version.
+    "pyarrow==21.0.0",
+]
 
 [project.scripts]
 acfr-digest = "acfr_digest_cli:main"

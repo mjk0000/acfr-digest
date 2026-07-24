@@ -9,10 +9,20 @@ a single Excel workbook.
 fields. The parser deliberately returns NOT FOUND rather than guessing; read
 [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) before relying on the output.
 
-## Web UI (drag and drop)
+## CLI (recommended — no UI dependencies)
 
 ```bash
-pip install .
+pipx install .
+acfr-digest --dir /path/to/acfrs --output results.xlsx
+```
+
+The core package installs only the parser and its two PDF/Excel libraries —
+no Streamlit. See below for full CLI usage.
+
+## Web UI (drag and drop, optional)
+
+```bash
+pip install '.[ui]'
 streamlit run app.py
 ```
 
@@ -25,10 +35,9 @@ each; scanned/OCR-path files take longer.
 CLI below — no upload, no session to keep alive, and a row-by-row checkpoint
 CSV as crash insurance.
 
-## CLI
+## CLI usage
 
 ```bash
-pipx install .
 acfr-digest --dir /path/to/acfrs --output results.xlsx
 acfr-digest report_a.pdf report_b.pdf --output results.xlsx --log run.log
 acfr-digest --version
